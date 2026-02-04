@@ -66,45 +66,21 @@ public sealed class GenerateArtifactsCommand : Command
             Description = "Path to the Angular workspace or application"
         };
 
-        OutputOption = new Option<string?>("-o", "--output")
-        {
-            Description = "Output directory for generated files"
-        };
+        OutputOption = new Option<string?>(new[] { "-o", "--output" }, "Output directory for generated files");
 
-        ProjectOption = new Option<string?>("-p", "--project")
-        {
-            Description = "Specific project name (for workspaces)"
-        };
+        ProjectOption = new Option<string?>(new[] { "-p", "--project" }, "Specific project name (for workspaces)");
 
-        FixturesOption = new Option<bool>("-f", "--fixtures")
-        {
-            Description = "Generate test fixtures"
-        };
+        FixturesOption = new Option<bool>(new[] { "-f", "--fixtures" }, "Generate test fixtures");
 
-        ConfigsOption = new Option<bool>("-c", "--configs")
-        {
-            Description = "Generate Playwright configuration"
-        };
+        ConfigsOption = new Option<bool>(new[] { "-c", "--configs" }, "Generate Playwright configuration");
 
-        SelectorsOption = new Option<bool>("-s", "--selectors")
-        {
-            Description = "Generate selector files"
-        };
+        SelectorsOption = new Option<bool>(new[] { "-s", "--selectors" }, "Generate selector files");
 
-        PageObjectsOption = new Option<bool>("--page-objects")
-        {
-            Description = "Generate page object files"
-        };
+        PageObjectsOption = new Option<bool>("--page-objects", "Generate page object files");
 
-        HelpersOption = new Option<bool>("--helpers")
-        {
-            Description = "Generate helper utilities"
-        };
+        HelpersOption = new Option<bool>("--helpers", "Generate helper utilities");
 
-        AllOption = new Option<bool>("-a", "--all")
-        {
-            Description = "Generate all artifacts"
-        };
+        AllOption = new Option<bool>(new[] { "-a", "--all" }, "Generate all artifacts");
 
         Add(PathArgument);
         Add(OutputOption);

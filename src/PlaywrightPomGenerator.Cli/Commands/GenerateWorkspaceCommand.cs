@@ -35,15 +35,9 @@ public sealed class GenerateWorkspaceCommand : Command
             Description = "Path to the Angular workspace"
         };
 
-        OutputOption = new Option<string?>("-o", "--output")
-        {
-            Description = "Output directory for generated files"
-        };
+        OutputOption = new Option<string?>(new[] { "-o", "--output" }, "Output directory for generated files");
 
-        ProjectOption = new Option<string?>("-p", "--project")
-        {
-            Description = "Specific project name to generate for (generates for all applications if not specified)"
-        };
+        ProjectOption = new Option<string?>(new[] { "-p", "--project" }, "Specific project name to generate for (generates for all applications if not specified)");
 
         Add(PathArgument);
         Add(OutputOption);

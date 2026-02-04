@@ -35,7 +35,7 @@ public sealed class CommandTests
 
         // Assert
         command.OutputOption.Should().NotBeNull();
-        command.OutputOption.Name.Should().Be("-o");
+        command.OutputOption.Name.Should().Be("output");
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class CommandTests
 
         // Assert
         command.ProjectOption.Should().NotBeNull();
-        command.ProjectOption.Name.Should().Be("-p");
+        command.ProjectOption.Name.Should().Be("project");
     }
 
     [Fact]

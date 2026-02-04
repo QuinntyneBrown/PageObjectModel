@@ -20,10 +20,9 @@ public sealed class GenerateSignalRMockCommand : Command
     public GenerateSignalRMockCommand()
         : base("signalr-mock", "Generate a fully functional SignalR mock fixture using RxJS")
     {
-        OutputArgument = new Argument<string>("output")
+        OutputArgument = new Argument<string>("output", getDefaultValue: () => ".")
         {
-            Description = "Output directory for the generated SignalR mock file",
-            DefaultValueFactory = _ => "."
+            Description = "Output directory for the generated SignalR mock file"
         };
 
         Add(OutputArgument);

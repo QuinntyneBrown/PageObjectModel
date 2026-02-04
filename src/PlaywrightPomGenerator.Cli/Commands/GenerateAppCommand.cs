@@ -30,10 +30,7 @@ public sealed class GenerateAppCommand : Command
             Description = "Path to the Angular application"
         };
 
-        OutputOption = new Option<string?>("-o", "--output")
-        {
-            Description = "Output directory for generated files"
-        };
+        OutputOption = new Option<string?>(new[] { "-o", "--output" }, "Output directory for generated files");
 
         Add(PathArgument);
         Add(OutputOption);

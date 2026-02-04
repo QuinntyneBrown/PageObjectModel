@@ -1,5 +1,5 @@
 using System.CommandLine;
-using System.CommandLine.Parsing;
+using System.CommandLine.Invocation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -19,18 +19,14 @@ public static class Program
     /// <summary>
     /// Global option for file header template.
     /// </summary>
-    public static Option<string?> HeaderOption { get; } = new Option<string?>("--header")
-    {
-        Description = "Header template for generated files. Supports placeholders: {FileName}, {GeneratedDate}, {ToolVersion}. By default, no header is included."
-    };
+    public static Option<string?> HeaderOption { get; } = new("--header",
+        "Header template for generated files. Supports placeholders: {FileName}, {GeneratedDate}, {ToolVersion}. By default, no header is included.");
 
     /// <summary>
     /// Global option for test file suffix.
     /// </summary>
-    public static Option<string?> TestSuffixOption { get; } = new Option<string?>("--test-suffix")
-    {
-        Description = "Suffix for test files (default: 'spec'). For example, 'test' produces 'component.test.ts'."
-    };
+    public static Option<string?> TestSuffixOption { get; } = new("--test-suffix",
+        "Suffix for test files (default: 'spec'). For example, 'test' produces 'component.test.ts'.");
 
     /// <summary>
     /// Main entry point.
@@ -41,17 +37,16 @@ public static class Program
     {
         // Pre-parse to extract global options for service configuration
         var preParseCommand = new RootCommand();
-        preParseCommand.Add(HeaderOption);
-        preParseCommand.Add(TestSuffixOption);
+        preParseCommand.AddGlobalOption(HeaderOption);
+        preParseCommand.AddGlobalOption(TestSuffixOption);
         var preParseResult = preParseCommand.Parse(args);
-        var headerValue = preParseResult.GetValue(HeaderOption);
-        var testSuffixValue = preParseResult.GetValue(TestSuffixOption);
+        var headerValue = preParseResult.GetValueForOption(HeaderOption);
+        var testSuffixValue = preParseResult.GetValueForOption(TestSuffixOption);
 
         using var host = CreateHost(args, headerValue, testSuffixValue);
         var rootCommand = BuildRootCommand(host.Services);
 
-        var parseResult = rootCommand.Parse(args);
-        return await parseResult.InvokeAsync().ConfigureAwait(false);
+        return await rootCommand.InvokeAsync(args).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -92,48 +87,48 @@ public static class Program
     public static RootCommand BuildRootCommand(IServiceProvider services)
     {
         var appCommand = new GenerateAppCommand();
-        appCommand.SetAction(async (parseResult, cancellationToken) =>
+        appCommand.SetHandler(async (context) =>
         {
-            var path = parseResult.GetValue(appCommand.PathArgument)!;
-            var output = parseResult.GetValue(appCommand.OutputOption);
+            var path = context.ParseResult.GetValueForArgument(appCommand.PathArgument);
+            var output = context.ParseResult.GetValueForOption(appCommand.OutputOption);
             var handler = services.GetRequiredService<GenerateAppCommandHandler>();
-            return await handler.ExecuteAsync(path, output, cancellationToken).ConfigureAwait(false);
+            context.ExitCode = await handler.ExecuteAsync(path, output, context.GetCancellationToken()).ConfigureAwait(false);
         });
 
         var workspaceCommand = new GenerateWorkspaceCommand();
-        workspaceCommand.SetAction(async (parseResult, cancellationToken) =>
+        workspaceCommand.SetHandler(async (context) =>
         {
-            var path = parseResult.GetValue(workspaceCommand.PathArgument)!;
-            var output = parseResult.GetValue(workspaceCommand.OutputOption);
-            var project = parseResult.GetValue(workspaceCommand.ProjectOption);
+            var path = context.ParseResult.GetValueForArgument(workspaceCommand.PathArgument);
+            var output = context.ParseResult.GetValueForOption(workspaceCommand.OutputOption);
+            var project = context.ParseResult.GetValueForOption(workspaceCommand.ProjectOption);
             var handler = services.GetRequiredService<GenerateWorkspaceCommandHandler>();
-            return await handler.ExecuteAsync(path, output, project, cancellationToken).ConfigureAwait(false);
+            context.ExitCode = await handler.ExecuteAsync(path, output, project, context.GetCancellationToken()).ConfigureAwait(false);
         });
 
         var artifactsCommand = new GenerateArtifactsCommand();
-        artifactsCommand.SetAction(async (parseResult, cancellationToken) =>
+        artifactsCommand.SetHandler(async (context) =>
         {
-            var path = parseResult.GetValue(artifactsCommand.PathArgument)!;
-            var output = parseResult.GetValue(artifactsCommand.OutputOption);
-            var project = parseResult.GetValue(artifactsCommand.ProjectOption);
-            var fixtures = parseResult.GetValue(artifactsCommand.FixturesOption);
-            var configs = parseResult.GetValue(artifactsCommand.ConfigsOption);
-            var selectors = parseResult.GetValue(artifactsCommand.SelectorsOption);
-            var pageObjects = parseResult.GetValue(artifactsCommand.PageObjectsOption);
-            var helpers = parseResult.GetValue(artifactsCommand.HelpersOption);
-            var all = parseResult.GetValue(artifactsCommand.AllOption);
+            var path = context.ParseResult.GetValueForArgument(artifactsCommand.PathArgument);
+            var output = context.ParseResult.GetValueForOption(artifactsCommand.OutputOption);
+            var project = context.ParseResult.GetValueForOption(artifactsCommand.ProjectOption);
+            var fixtures = context.ParseResult.GetValueForOption(artifactsCommand.FixturesOption);
+            var configs = context.ParseResult.GetValueForOption(artifactsCommand.ConfigsOption);
+            var selectors = context.ParseResult.GetValueForOption(artifactsCommand.SelectorsOption);
+            var pageObjects = context.ParseResult.GetValueForOption(artifactsCommand.PageObjectsOption);
+            var helpers = context.ParseResult.GetValueForOption(artifactsCommand.HelpersOption);
+            var all = context.ParseResult.GetValueForOption(artifactsCommand.AllOption);
             var handler = services.GetRequiredService<GenerateArtifactsCommandHandler>();
-            return await handler.ExecuteAsync(
-                path, output, project, fixtures, configs, selectors, pageObjects, helpers, all, cancellationToken)
+            context.ExitCode = await handler.ExecuteAsync(
+                path, output, project, fixtures, configs, selectors, pageObjects, helpers, all, context.GetCancellationToken())
                 .ConfigureAwait(false);
         });
 
         var signalRMockCommand = new GenerateSignalRMockCommand();
-        signalRMockCommand.SetAction(async (parseResult, cancellationToken) =>
+        signalRMockCommand.SetHandler(async (context) =>
         {
-            var output = parseResult.GetValue(signalRMockCommand.OutputArgument)!;
+            var output = context.ParseResult.GetValueForArgument(signalRMockCommand.OutputArgument);
             var handler = services.GetRequiredService<GenerateSignalRMockCommandHandler>();
-            return await handler.ExecuteAsync(output, cancellationToken).ConfigureAwait(false);
+            context.ExitCode = await handler.ExecuteAsync(output, context.GetCancellationToken()).ConfigureAwait(false);
         });
 
         var rootCommand = new RootCommand("Playwright Page Object Model Generator for Angular applications")
@@ -145,8 +140,8 @@ public static class Program
         };
 
         // Add global options for header and test suffix
-        rootCommand.Add(HeaderOption);
-        rootCommand.Add(TestSuffixOption);
+        rootCommand.AddGlobalOption(HeaderOption);
+        rootCommand.AddGlobalOption(TestSuffixOption);
 
         return rootCommand;
     }
