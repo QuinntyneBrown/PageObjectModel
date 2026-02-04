@@ -123,6 +123,15 @@ public static class Program
                 .ConfigureAwait(false);
         });
 
+        var libraryCommand = new GenerateLibraryCommand();
+        libraryCommand.SetHandler(async (context) =>
+        {
+            var path = context.ParseResult.GetValueForArgument(libraryCommand.PathArgument);
+            var output = context.ParseResult.GetValueForOption(libraryCommand.OutputOption);
+            var handler = services.GetRequiredService<GenerateLibraryCommandHandler>();
+            context.ExitCode = await handler.ExecuteAsync(path, output, context.GetCancellationToken()).ConfigureAwait(false);
+        });
+
         var signalRMockCommand = new GenerateSignalRMockCommand();
         signalRMockCommand.SetHandler(async (context) =>
         {
@@ -131,10 +140,11 @@ public static class Program
             context.ExitCode = await handler.ExecuteAsync(output, context.GetCancellationToken()).ConfigureAwait(false);
         });
 
-        var rootCommand = new RootCommand("Playwright Page Object Model Generator for Angular applications")
+        var rootCommand = new RootCommand("Playwright Page Object Model Generator for Angular applications and libraries")
         {
             appCommand,
             workspaceCommand,
+            libraryCommand,
             artifactsCommand,
             signalRMockCommand
         };
@@ -187,6 +197,7 @@ public static class Program
         // Command handlers
         services.AddTransient<GenerateAppCommandHandler>();
         services.AddTransient<GenerateWorkspaceCommandHandler>();
+        services.AddTransient<GenerateLibraryCommandHandler>();
         services.AddTransient<GenerateArtifactsCommandHandler>();
         services.AddTransient<GenerateSignalRMockCommandHandler>();
     }

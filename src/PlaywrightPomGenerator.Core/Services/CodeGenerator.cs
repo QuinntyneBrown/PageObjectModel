@@ -59,13 +59,17 @@ public sealed class CodeGenerator : ICodeGenerator
             _fileSystem.CreateDirectory(fullOutputPath);
 
             // Create directory structure
-            var pagesDir = _fileSystem.CombinePath(fullOutputPath, "pages");
-            var selectorsDir = _fileSystem.CombinePath(fullOutputPath, "selectors");
+            var pageObjectsDir = _fileSystem.CombinePath(fullOutputPath, "page-objects");
+            var helpersDir = _fileSystem.CombinePath(fullOutputPath, "helpers");
             var testsDir = _fileSystem.CombinePath(fullOutputPath, "tests");
+            var configsDir = _fileSystem.CombinePath(fullOutputPath, "configs");
+            var fixturesDir = _fileSystem.CombinePath(fullOutputPath, "fixtures");
 
-            _fileSystem.CreateDirectory(pagesDir);
-            _fileSystem.CreateDirectory(selectorsDir);
+            _fileSystem.CreateDirectory(pageObjectsDir);
+            _fileSystem.CreateDirectory(helpersDir);
             _fileSystem.CreateDirectory(testsDir);
+            _fileSystem.CreateDirectory(configsDir);
+            _fileSystem.CreateDirectory(fixturesDir);
 
             // Deduplicate components by name (keep first occurrence, merge selectors from duplicates)
             var deduplicatedComponents = DeduplicateComponents(project.Components);
@@ -80,20 +84,35 @@ public sealed class CodeGenerator : ICodeGenerator
                     duplicateCount, project.Name);
             }
 
-            // Generate config
+            // Generate playwright config
             var configFile = await GenerateConfigFileAsync(deduplicatedProject, fullOutputPath, cancellationToken)
                 .ConfigureAwait(false);
             generatedFiles.Add(configFile);
 
+            // Generate timeout config
+            var timeoutConfigFile = await GenerateTimeoutConfigFileAsync(configsDir, cancellationToken)
+                .ConfigureAwait(false);
+            generatedFiles.Add(timeoutConfigFile);
+
+            // Generate urls config
+            var urlsConfigFile = await GenerateUrlsConfigFileAsync(configsDir, cancellationToken)
+                .ConfigureAwait(false);
+            generatedFiles.Add(urlsConfigFile);
+
             // Generate fixture
-            var fixtureFile = await GenerateFixtureFileAsync(deduplicatedProject, fullOutputPath, cancellationToken)
+            var fixtureFile = await GenerateFixtureFileAsync(deduplicatedProject, fixturesDir, cancellationToken)
                 .ConfigureAwait(false);
             generatedFiles.Add(fixtureFile);
 
-            // Generate helpers
-            var helpersFile = await GenerateHelpersFileAsync(fullOutputPath, cancellationToken)
+            // Generate helpers utility file
+            var helpersUtilFile = await GenerateHelpersUtilFileAsync(fullOutputPath, cancellationToken)
                 .ConfigureAwait(false);
-            generatedFiles.Add(helpersFile);
+            generatedFiles.Add(helpersUtilFile);
+
+            // Generate base page class
+            var basePageFile = await GenerateBasePageFileAsync(pageObjectsDir, cancellationToken)
+                .ConfigureAwait(false);
+            generatedFiles.Add(basePageFile);
 
             // Generate page objects, selectors, and tests for each component
             foreach (var component in deduplicatedComponents)
@@ -102,11 +121,11 @@ public sealed class CodeGenerator : ICodeGenerator
 
                 try
                 {
-                    var pageObjectFile = await GeneratePageObjectFileAsync(component, pagesDir, cancellationToken)
+                    var pageObjectFile = await GeneratePageObjectFileAsync(component, pageObjectsDir, cancellationToken)
                         .ConfigureAwait(false);
                     generatedFiles.Add(pageObjectFile);
 
-                    var selectorsFile = await GenerateSelectorsFileAsync(component, selectorsDir, cancellationToken)
+                    var selectorsFile = await GenerateSelectorsFileAsync(component, helpersDir, cancellationToken)
                         .ConfigureAwait(false);
                     generatedFiles.Add(selectorsFile);
 
@@ -269,23 +288,28 @@ public sealed class CodeGenerator : ICodeGenerator
 
             if (request.GenerateHelpers)
             {
-                var helpersFile = await GenerateHelpersFileAsync(outputPath, cancellationToken)
+                var helpersFile = await GenerateHelpersUtilFileAsync(outputPath, cancellationToken)
                     .ConfigureAwait(false);
                 generatedFiles.Add(helpersFile);
             }
 
             if (request.GeneratePageObjects || request.GenerateSelectors)
             {
-                var pagesDir = _fileSystem.CombinePath(outputPath, "pages");
-                var selectorsDir = _fileSystem.CombinePath(outputPath, "selectors");
+                var pageObjectsDir = _fileSystem.CombinePath(outputPath, "page-objects");
+                var helpersDir = _fileSystem.CombinePath(outputPath, "helpers");
 
                 if (request.GeneratePageObjects)
                 {
-                    _fileSystem.CreateDirectory(pagesDir);
+                    _fileSystem.CreateDirectory(pageObjectsDir);
+
+                    // Generate base page class first
+                    var basePageFile = await GenerateBasePageFileAsync(pageObjectsDir, cancellationToken)
+                        .ConfigureAwait(false);
+                    generatedFiles.Add(basePageFile);
                 }
                 if (request.GenerateSelectors)
                 {
-                    _fileSystem.CreateDirectory(selectorsDir);
+                    _fileSystem.CreateDirectory(helpersDir);
                 }
 
                 foreach (var component in project.Components)
@@ -296,14 +320,14 @@ public sealed class CodeGenerator : ICodeGenerator
                     {
                         if (request.GeneratePageObjects)
                         {
-                            var pageObjectFile = await GeneratePageObjectFileAsync(component, pagesDir, cancellationToken)
+                            var pageObjectFile = await GeneratePageObjectFileAsync(component, pageObjectsDir, cancellationToken)
                                 .ConfigureAwait(false);
                             generatedFiles.Add(pageObjectFile);
                         }
 
                         if (request.GenerateSelectors)
                         {
-                            var selectorsFile = await GenerateSelectorsFileAsync(component, selectorsDir, cancellationToken)
+                            var selectorsFile = await GenerateSelectorsFileAsync(component, helpersDir, cancellationToken)
                                 .ConfigureAwait(false);
                             generatedFiles.Add(selectorsFile);
                         }
@@ -385,25 +409,25 @@ public sealed class CodeGenerator : ICodeGenerator
 
     private async Task<GeneratedFile> GenerateFixtureFileAsync(
         AngularProjectInfo project,
-        string outputPath,
+        string fixturesDir,
         CancellationToken cancellationToken)
     {
         var content = _templateEngine.GenerateFixture(project);
-        var filePath = _fileSystem.CombinePath(outputPath, "fixtures.ts");
+        var filePath = _fileSystem.CombinePath(fixturesDir, "fixtures.ts");
 
         await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken)
             .ConfigureAwait(false);
 
         return new GeneratedFile
         {
-            RelativePath = "fixtures.ts",
+            RelativePath = "fixtures/fixtures.ts",
             AbsolutePath = filePath,
             FileType = GeneratedFileType.Fixture,
             Content = content
         };
     }
 
-    private async Task<GeneratedFile> GenerateHelpersFileAsync(
+    private async Task<GeneratedFile> GenerateHelpersUtilFileAsync(
         string outputPath,
         CancellationToken cancellationToken)
     {
@@ -422,21 +446,78 @@ public sealed class CodeGenerator : ICodeGenerator
         };
     }
 
-    private async Task<GeneratedFile> GeneratePageObjectFileAsync(
-        AngularComponentInfo component,
-        string pagesDir,
+    private async Task<GeneratedFile> GenerateTimeoutConfigFileAsync(
+        string configsDir,
         CancellationToken cancellationToken)
     {
-        var content = _templateEngine.GeneratePageObject(component);
-        var fileName = $"{ToKebabCase(component.Name)}.page.ts";
-        var filePath = _fileSystem.CombinePath(pagesDir, fileName);
+        var content = _templateEngine.GenerateTimeoutConfig();
+        var filePath = _fileSystem.CombinePath(configsDir, "timeout.config.ts");
 
         await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken)
             .ConfigureAwait(false);
 
         return new GeneratedFile
         {
-            RelativePath = $"pages/{fileName}",
+            RelativePath = "configs/timeout.config.ts",
+            AbsolutePath = filePath,
+            FileType = GeneratedFileType.Config,
+            Content = content
+        };
+    }
+
+    private async Task<GeneratedFile> GenerateUrlsConfigFileAsync(
+        string configsDir,
+        CancellationToken cancellationToken)
+    {
+        var content = _templateEngine.GenerateUrlsConfig();
+        var filePath = _fileSystem.CombinePath(configsDir, "urls.config.ts");
+
+        await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new GeneratedFile
+        {
+            RelativePath = "configs/urls.config.ts",
+            AbsolutePath = filePath,
+            FileType = GeneratedFileType.Config,
+            Content = content
+        };
+    }
+
+    private async Task<GeneratedFile> GenerateBasePageFileAsync(
+        string pageObjectsDir,
+        CancellationToken cancellationToken)
+    {
+        var content = _templateEngine.GenerateBasePage();
+        var filePath = _fileSystem.CombinePath(pageObjectsDir, "base.page.ts");
+
+        await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new GeneratedFile
+        {
+            RelativePath = "page-objects/base.page.ts",
+            AbsolutePath = filePath,
+            FileType = GeneratedFileType.PageObject,
+            Content = content
+        };
+    }
+
+    private async Task<GeneratedFile> GeneratePageObjectFileAsync(
+        AngularComponentInfo component,
+        string pageObjectsDir,
+        CancellationToken cancellationToken)
+    {
+        var content = _templateEngine.GeneratePageObject(component);
+        var fileName = $"{ToKebabCase(component.Name)}.page.ts";
+        var filePath = _fileSystem.CombinePath(pageObjectsDir, fileName);
+
+        await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new GeneratedFile
+        {
+            RelativePath = $"page-objects/{fileName}",
             AbsolutePath = filePath,
             FileType = GeneratedFileType.PageObject,
             Content = content
@@ -445,19 +526,19 @@ public sealed class CodeGenerator : ICodeGenerator
 
     private async Task<GeneratedFile> GenerateSelectorsFileAsync(
         AngularComponentInfo component,
-        string selectorsDir,
+        string helpersDir,
         CancellationToken cancellationToken)
     {
         var content = _templateEngine.GenerateSelectors(component);
         var fileName = $"{ToKebabCase(component.Name)}.selectors.ts";
-        var filePath = _fileSystem.CombinePath(selectorsDir, fileName);
+        var filePath = _fileSystem.CombinePath(helpersDir, fileName);
 
         await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken)
             .ConfigureAwait(false);
 
         return new GeneratedFile
         {
-            RelativePath = $"selectors/{fileName}",
+            RelativePath = $"helpers/{fileName}",
             AbsolutePath = filePath,
             FileType = GeneratedFileType.Selectors,
             Content = content

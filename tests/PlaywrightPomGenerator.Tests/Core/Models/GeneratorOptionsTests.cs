@@ -14,7 +14,7 @@ public sealed class GeneratorOptionsTests
         // Assert
         options.FileHeader.Should().BeEmpty("because by default no header is included");
         options.TestFileSuffix.Should().Be("spec");
-        options.ToolVersion.Should().Be("1.0.0");
+        options.ToolVersion.Should().Be("1.2.0");
         options.OutputDirectoryName.Should().Be("e2e");
         options.GenerateJsDocComments.Should().BeTrue();
         options.DefaultTimeout.Should().Be(30000);

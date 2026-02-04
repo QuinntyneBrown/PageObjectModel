@@ -60,4 +60,22 @@ public interface ITemplateEngine
     /// <param name="fileName">The file name.</param>
     /// <returns>The generated header.</returns>
     string GenerateFileHeader(string fileName);
+
+    /// <summary>
+    /// Generates the timeout configuration file with standard timeouts.
+    /// </summary>
+    /// <returns>The generated TypeScript code.</returns>
+    string GenerateTimeoutConfig();
+
+    /// <summary>
+    /// Generates the URLs configuration file with URL constants.
+    /// </summary>
+    /// <returns>The generated TypeScript code.</returns>
+    string GenerateUrlsConfig();
+
+    /// <summary>
+    /// Generates the base page class that all page objects extend from.
+    /// </summary>
+    /// <returns>The generated TypeScript code.</returns>
+    string GenerateBasePage();
 }

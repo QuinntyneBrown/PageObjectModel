@@ -68,6 +68,16 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
     }
 
     /// <inheritdoc />
+    public bool IsLibrary(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        // Angular libraries have ng-package.json in their root
+        var ngPackagePath = _fileSystem.CombinePath(path, "ng-package.json");
+        return _fileSystem.FileExists(ngPackagePath);
+    }
+
+    /// <inheritdoc />
     public async Task<AngularWorkspaceInfo> AnalyzeWorkspaceAsync(
         string workspacePath,
         CancellationToken cancellationToken = default)
@@ -114,11 +124,6 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
                 var projectElement = projectProp.Value;
 
                 var projectType = GetProjectType(projectElement);
-                if (projectType == AngularProjectType.Library)
-                {
-                    _logger.LogDebug("Skipping library project {ProjectName}", projectName);
-                    continue;
-                }
 
                 var projectRoot = projectElement.TryGetProperty("root", out var rootProp)
                     ? rootProp.GetString() ?? ""
@@ -201,12 +206,74 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
 
         var projectName = _fileSystem.GetFileName(fullPath) ?? "app";
 
+        // Check if this is actually a library
+        var projectType = IsLibrary(fullPath)
+            ? AngularProjectType.Library
+            : AngularProjectType.Application;
+
         return new AngularProjectInfo
         {
             Name = projectName,
             RootPath = fullPath,
             SourceRoot = srcPath,
-            ProjectType = AngularProjectType.Application,
+            ProjectType = projectType,
+            Components = components,
+            Routes = routes
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<AngularProjectInfo> AnalyzeLibraryAsync(
+        string libraryPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(libraryPath);
+
+        var fullPath = _fileSystem.GetFullPath(libraryPath);
+        _logger.LogInformation("Analyzing Angular library at {Path}", fullPath);
+
+        // If this is a workspace, try to find a library project
+        if (IsWorkspace(fullPath))
+        {
+            var workspace = await AnalyzeWorkspaceAsync(fullPath, cancellationToken).ConfigureAwait(false);
+
+            var library = workspace.Projects.FirstOrDefault(p => p.ProjectType == AngularProjectType.Library);
+
+            if (library is null)
+            {
+                throw new InvalidOperationException("No library project found in workspace");
+            }
+
+            return library;
+        }
+
+        // Standalone library structure
+        var srcPath = _fileSystem.CombinePath(fullPath, "src");
+        if (!_fileSystem.DirectoryExists(srcPath))
+        {
+            // Libraries often have src/lib structure
+            var libPath = _fileSystem.CombinePath(fullPath, "src", "lib");
+            if (_fileSystem.DirectoryExists(libPath))
+            {
+                srcPath = libPath;
+            }
+            else
+            {
+                srcPath = fullPath;
+            }
+        }
+
+        var components = await AnalyzeComponentsAsync(srcPath, cancellationToken).ConfigureAwait(false);
+        var routes = await AnalyzeRoutesAsync(srcPath, cancellationToken).ConfigureAwait(false);
+
+        var projectName = _fileSystem.GetFileName(fullPath) ?? "lib";
+
+        return new AngularProjectInfo
+        {
+            Name = projectName,
+            RootPath = fullPath,
+            SourceRoot = srcPath,
+            ProjectType = AngularProjectType.Library,
             Components = components,
             Routes = routes
         };
@@ -266,12 +333,24 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
                 var component = ParseComponent(filePath, content);
                 if (component is not null)
                 {
-                    // Try to find and parse the template
+                    // Try to find and parse the template (external file or inline)
                     var templatePath = GetTemplatePath(filePath, content);
+                    string? templateContent = null;
+
                     if (templatePath is not null && _fileSystem.FileExists(templatePath))
                     {
-                        var templateContent = await _fileSystem.ReadAllTextAsync(templatePath, cancellationToken)
+                        // External template file
+                        templateContent = await _fileSystem.ReadAllTextAsync(templatePath, cancellationToken)
                             .ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        // Try to extract inline template
+                        templateContent = ExtractInlineTemplate(content);
+                    }
+
+                    if (!string.IsNullOrEmpty(templateContent))
+                    {
                         var selectors = ParseTemplateSelectors(templateContent);
 
                         component = component with
@@ -346,8 +425,8 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
             }
         }
 
-        // Check for inline template
-        if (content.Contains("template:"))
+        // Check for inline template - return null to trigger inline template extraction
+        if (content.Contains("template:") || content.Contains("template`"))
         {
             return null;
         }
@@ -365,6 +444,32 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
         if (_fileSystem.FileExists(htmlPath))
         {
             return htmlPath;
+        }
+
+        return null;
+    }
+
+    private static string? ExtractInlineTemplate(string componentContent)
+    {
+        // Try to extract template content using backticks (template literals)
+        var backtickMatch = InlineTemplateBacktickRegex().Match(componentContent);
+        if (backtickMatch.Success)
+        {
+            return backtickMatch.Groups[1].Value;
+        }
+
+        // Try to extract template content using single quotes
+        var singleQuoteMatch = InlineTemplateSingleQuoteRegex().Match(componentContent);
+        if (singleQuoteMatch.Success)
+        {
+            return singleQuoteMatch.Groups[1].Value;
+        }
+
+        // Try to extract template content using double quotes
+        var doubleQuoteMatch = InlineTemplateDoubleQuoteRegex().Match(componentContent);
+        if (doubleQuoteMatch.Success)
+        {
+            return doubleQuoteMatch.Groups[1].Value;
         }
 
         return null;
@@ -451,7 +556,355 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
             });
         }
 
+        // Parse input elements with type attribute (checkbox, text, email, etc.)
+        foreach (Match match in InputWithTypeRegex().Matches(templateContent))
+        {
+            var inputType = match.Groups[1].Value.ToLowerInvariant();
+            var fullMatch = match.Value;
+
+            // Skip if already handled by formControlName
+            if (fullMatch.Contains("formControlName"))
+            {
+                continue;
+            }
+
+            // Try to get a meaningful name from placeholder or class
+            var placeholder = ExtractAttribute(fullMatch, "placeholder");
+            var className = ExtractAttribute(fullMatch, "class");
+
+            string propertyName;
+            string? textContent = null;
+
+            if (!string.IsNullOrEmpty(placeholder) && !placeholder.Contains("{{"))
+            {
+                propertyName = ToPascalCase(placeholder) + "Input";
+                textContent = placeholder;
+            }
+            else if (inputType == "checkbox")
+            {
+                propertyName = "Checkbox";
+            }
+            else if (!string.IsNullOrEmpty(className))
+            {
+                // Try to derive from class name
+                var classWords = className.Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries);
+                var meaningfulWord = classWords.FirstOrDefault(w =>
+                    !w.StartsWith("cb-", StringComparison.OrdinalIgnoreCase) &&
+                    !w.Equals("form", StringComparison.OrdinalIgnoreCase) &&
+                    !w.Equals("input", StringComparison.OrdinalIgnoreCase));
+                propertyName = meaningfulWord is not null
+                    ? ToPascalCase(meaningfulWord) + "Input"
+                    : ToPascalCase(inputType) + "Input";
+            }
+            else
+            {
+                propertyName = ToPascalCase(inputType) + "Input";
+            }
+
+            // Make name unique if duplicate
+            var baseName = propertyName;
+            var counter = 1;
+            while (selectors.Any(s => s.PropertyName == propertyName))
+            {
+                propertyName = $"{baseName}{counter++}";
+            }
+
+            var selectorValue = inputType == "checkbox"
+                ? "input[type='checkbox']"
+                : !string.IsNullOrEmpty(placeholder)
+                    ? $"input[placeholder='{placeholder}']"
+                    : $"input[type='{inputType}']";
+
+            selectors.Add(new ElementSelector
+            {
+                ElementType = "input",
+                Strategy = !string.IsNullOrEmpty(placeholder) ? SelectorStrategy.Placeholder : SelectorStrategy.Css,
+                SelectorValue = selectorValue,
+                PropertyName = propertyName,
+                TextContent = textContent
+            });
+        }
+
+        // Parse elements with click handlers
+        foreach (Match match in ClickHandlerRegex().Matches(templateContent))
+        {
+            var handlerName = match.Groups[1].Value;
+            var elementType = ExtractElementType(templateContent, match.Index);
+            var textContent = ExtractTextContent(templateContent, match.Index);
+
+            // Derive property name - prefer text content, fall back to handler name
+            string propertyName;
+            string selectorValue;
+            SelectorStrategy strategy;
+
+            if (!string.IsNullOrWhiteSpace(textContent) && !textContent.Contains("{{"))
+            {
+                // Has static text content - use text-based selector
+                propertyName = ToPascalCase(textContent) + GetElementTypeSuffix(elementType);
+                selectorValue = $"{elementType}:has-text(\"{textContent}\")";
+                strategy = SelectorStrategy.Text;
+            }
+            else
+            {
+                // No static text - use handler name to derive property name
+                // Convert handler like "onClick" -> "Click", "onSubmit" -> "Submit"
+                var cleanHandlerName = handlerName.StartsWith("on", StringComparison.OrdinalIgnoreCase)
+                    ? handlerName[2..]
+                    : handlerName;
+                propertyName = ToPascalCase(cleanHandlerName) + GetElementTypeSuffix(elementType);
+
+                // Use element type selector for non-text elements
+                if (elementType == "button")
+                {
+                    selectorValue = "button";
+                    strategy = SelectorStrategy.Role;
+                }
+                else
+                {
+                    selectorValue = elementType;
+                    strategy = SelectorStrategy.Css;
+                }
+                textContent = null;
+            }
+
+            if (selectors.Any(s => s.PropertyName == propertyName))
+            {
+                continue;
+            }
+
+            selectors.Add(new ElementSelector
+            {
+                ElementType = elementType,
+                Strategy = strategy,
+                SelectorValue = selectorValue,
+                PropertyName = propertyName,
+                TextContent = textContent,
+                HasClickHandler = true,
+                ClickHandlerName = handlerName
+            });
+        }
+
+        // Parse elements with routerLink
+        foreach (Match match in RouterLinkRegex().Matches(templateContent))
+        {
+            var route = match.Groups[1].Value;
+            var elementType = ExtractElementType(templateContent, match.Index);
+            var textContent = ExtractTextContent(templateContent, match.Index);
+
+            if (string.IsNullOrWhiteSpace(textContent) || textContent.Contains("{{"))
+            {
+                continue;
+            }
+
+            var propertyName = ToPascalCase(textContent) + "Link";
+            if (selectors.Any(s => s.PropertyName == propertyName))
+            {
+                continue;
+            }
+
+            selectors.Add(new ElementSelector
+            {
+                ElementType = elementType,
+                Strategy = SelectorStrategy.Text,
+                SelectorValue = $"[routerLink]:has-text(\"{textContent}\")",
+                PropertyName = propertyName,
+                TextContent = textContent,
+                IsLink = true
+            });
+        }
+
+        // Parse Angular Material buttons (mat-button, mat-raised-button, etc.)
+        foreach (Match match in MatButtonRegex().Matches(templateContent))
+        {
+            var fullMatch = match.Value;
+            var textContent = ExtractMatButtonText(fullMatch);
+
+            if (string.IsNullOrWhiteSpace(textContent) || textContent.Contains("{{"))
+            {
+                continue;
+            }
+
+            var propertyName = ToPascalCase(textContent) + "Button";
+            if (selectors.Any(s => s.PropertyName == propertyName))
+            {
+                continue;
+            }
+
+            var hasClick = fullMatch.Contains("(click)");
+            var clickHandler = hasClick ? ExtractClickHandler(fullMatch) : null;
+
+            selectors.Add(new ElementSelector
+            {
+                ElementType = "button",
+                Strategy = SelectorStrategy.Role,
+                SelectorValue = $"button:has-text(\"{textContent}\")",
+                PropertyName = propertyName,
+                TextContent = textContent,
+                IsMaterialComponent = true,
+                HasClickHandler = hasClick,
+                ClickHandlerName = clickHandler
+            });
+        }
+
+        // Parse Angular Material form fields
+        foreach (Match match in MatFormFieldRegex().Matches(templateContent))
+        {
+            var fullMatch = match.Value;
+            var labelMatch = MatLabelRegex().Match(fullMatch);
+            if (!labelMatch.Success)
+            {
+                continue;
+            }
+
+            var label = labelMatch.Groups[1].Value.Trim();
+            if (string.IsNullOrWhiteSpace(label) || label.Contains("{{"))
+            {
+                continue;
+            }
+
+            var propertyName = ToPascalCase(label) + "Field";
+            if (selectors.Any(s => s.PropertyName == propertyName))
+            {
+                continue;
+            }
+
+            selectors.Add(new ElementSelector
+            {
+                ElementType = "mat-form-field",
+                Strategy = SelectorStrategy.Label,
+                SelectorValue = $"mat-form-field:has(mat-label:has-text(\"{label}\"))",
+                PropertyName = propertyName,
+                TextContent = label,
+                IsMaterialComponent = true
+            });
+        }
+
+        // Parse tables and mat-tables
+        foreach (Match match in TableRegex().Matches(templateContent))
+        {
+            var fullMatch = match.Value;
+            var isMatTable = fullMatch.Contains("mat-table") || fullMatch.Contains("[matSort]");
+            var tableId = ExtractAttribute(fullMatch, "id") ?? ExtractAttribute(fullMatch, "data-testid");
+
+            var propertyName = !string.IsNullOrEmpty(tableId)
+                ? ToPascalCase(tableId) + "Table"
+                : isMatTable ? "DataTable" : "Table";
+
+            if (selectors.Any(s => s.PropertyName == propertyName))
+            {
+                propertyName = propertyName + selectors.Count(s => s.IsTable);
+            }
+
+            var selectorValue = isMatTable
+                ? "mat-table, table[mat-table], [mat-table]"
+                : !string.IsNullOrEmpty(tableId)
+                    ? $"#{tableId}"
+                    : "table";
+
+            selectors.Add(new ElementSelector
+            {
+                ElementType = isMatTable ? "mat-table" : "table",
+                Strategy = !string.IsNullOrEmpty(tableId) ? SelectorStrategy.Id : SelectorStrategy.Css,
+                SelectorValue = selectorValue,
+                PropertyName = propertyName,
+                IsTable = true,
+                IsMaterialComponent = isMatTable
+            });
+        }
+
+        // Parse elements with text content (custom components like <m-foo>Text</m-foo>)
+        foreach (Match match in CustomElementWithTextRegex().Matches(templateContent))
+        {
+            var tagName = match.Groups[1].Value;
+            var textContent = match.Groups[2].Value.Trim();
+
+            // Skip standard HTML elements and elements we've already handled
+            if (IsStandardHtmlElement(tagName) || string.IsNullOrWhiteSpace(textContent) || textContent.Contains("{{"))
+            {
+                continue;
+            }
+
+            var propertyName = ToPascalCase(textContent) + GetElementTypeSuffix(tagName);
+            if (selectors.Any(s => s.PropertyName == propertyName))
+            {
+                continue;
+            }
+
+            selectors.Add(new ElementSelector
+            {
+                ElementType = tagName,
+                Strategy = SelectorStrategy.Text,
+                SelectorValue = $"{tagName}:has-text(\"{textContent}\")",
+                PropertyName = propertyName,
+                TextContent = textContent
+            });
+        }
+
         return selectors;
+    }
+
+    private static string? ExtractTextContent(string content, int position)
+    {
+        // Find the closing > of the opening tag
+        var tagEnd = content.IndexOf('>', position);
+        if (tagEnd < 0) return null;
+
+        // Find the next < which starts the closing tag or a child element
+        var textEnd = content.IndexOf('<', tagEnd + 1);
+        if (textEnd < 0) return null;
+
+        var text = content[(tagEnd + 1)..textEnd].Trim();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    private static string? ExtractClickHandler(string elementContent)
+    {
+        var match = ClickHandlerRegex().Match(elementContent);
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    private static string? ExtractAttribute(string elementContent, string attributeName)
+    {
+        var pattern = $@"{attributeName}\s*=\s*['""]([^'""]+)['""]";
+        var match = Regex.Match(elementContent, pattern);
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    private static string ExtractMatButtonText(string buttonElement)
+    {
+        // Try to find text between > and <
+        var match = Regex.Match(buttonElement, @">([^<]+)<");
+        if (match.Success)
+        {
+            return match.Groups[1].Value.Trim();
+        }
+        return string.Empty;
+    }
+
+    private static string GetElementTypeSuffix(string elementType)
+    {
+        return elementType.ToLowerInvariant() switch
+        {
+            "button" or "mat-button" => "Button",
+            "a" => "Link",
+            "input" => "Input",
+            "table" or "mat-table" => "Table",
+            _ when elementType.StartsWith("mat-", StringComparison.OrdinalIgnoreCase) => "Element",
+            _ => "Element"
+        };
+    }
+
+    private static bool IsStandardHtmlElement(string tagName)
+    {
+        var standardElements = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6",
+            "a", "button", "input", "form", "label", "select", "option",
+            "table", "tr", "td", "th", "thead", "tbody", "tfoot",
+            "ul", "ol", "li", "nav", "header", "footer", "main", "section",
+            "article", "aside", "img", "video", "audio", "canvas", "svg"
+        };
+        return standardElements.Contains(tagName);
     }
 
     private static string ExtractElementType(string content, int position)
@@ -597,4 +1050,37 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
 
     [GeneratedRegex(@"redirectTo\s*:\s*['""]([^'""]+)['""]")]
     private static partial Regex RouteRedirectRegex();
+
+    [GeneratedRegex(@"\(click\)\s*=\s*['""](\w+)\([^)]*\)['""]")]
+    private static partial Regex ClickHandlerRegex();
+
+    [GeneratedRegex(@"routerLink\s*=\s*['""]([^'""]+)['""]|\[routerLink\]\s*=\s*['""]([^'""]+)['""]")]
+    private static partial Regex RouterLinkRegex();
+
+    [GeneratedRegex(@"<button[^>]*(?:mat-button|mat-raised-button|mat-flat-button|mat-stroked-button|mat-icon-button|mat-fab|mat-mini-fab)[^>]*>([^<]*(?:<[^/][^>]*>[^<]*</[^>]+>)*[^<]*)</button>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex MatButtonRegex();
+
+    [GeneratedRegex(@"<mat-form-field[^>]*>.*?</mat-form-field>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex MatFormFieldRegex();
+
+    [GeneratedRegex(@"<mat-label[^>]*>([^<]+)</mat-label>", RegexOptions.IgnoreCase)]
+    private static partial Regex MatLabelRegex();
+
+    [GeneratedRegex(@"<(?:table|mat-table|\w+\s+mat-table)[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex TableRegex();
+
+    [GeneratedRegex(@"<([\w-]+)[^>]*>([^<]+)</\1>", RegexOptions.IgnoreCase)]
+    private static partial Regex CustomElementWithTextRegex();
+
+    [GeneratedRegex(@"template\s*:\s*`([^`]*)`", RegexOptions.Singleline)]
+    private static partial Regex InlineTemplateBacktickRegex();
+
+    [GeneratedRegex(@"template\s*:\s*'([^']*)'", RegexOptions.Singleline)]
+    private static partial Regex InlineTemplateSingleQuoteRegex();
+
+    [GeneratedRegex(@"template\s*:\s*""([^""]*)""", RegexOptions.Singleline)]
+    private static partial Regex InlineTemplateDoubleQuoteRegex();
+
+    [GeneratedRegex(@"<input[^>]*type\s*=\s*['""]([^'""]+)['""][^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex InputWithTypeRegex();
 }

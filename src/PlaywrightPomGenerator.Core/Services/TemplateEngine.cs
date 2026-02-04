@@ -53,7 +53,8 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine(header);
             sb.AppendLine();
         }
-        sb.AppendLine("import { Page, Locator } from '@playwright/test';");
+        sb.AppendLine("import { Locator, expect } from '@playwright/test';");
+        sb.AppendLine("import { BasePage } from './base.page';");
         sb.AppendLine();
 
         if (_options.GenerateJsDocComments)
@@ -64,8 +65,14 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine(" */");
         }
 
-        sb.AppendLine($"export class {className} {{");
-        sb.AppendLine("  readonly page: Page;");
+        sb.AppendLine($"export class {className} extends BasePage {{");
+
+        // Component selector constant
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /** The component selector used to identify this page. */");
+        }
+        sb.AppendLine($"  private readonly componentSelector = '{component.Selector}';");
         sb.AppendLine();
 
         // Generate selector properties
@@ -82,7 +89,10 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine($"  readonly {ToCamelCase(selector.PropertyName)}: Locator;");
         }
 
-        sb.AppendLine();
+        if (component.Selectors.Count > 0)
+        {
+            sb.AppendLine();
+        }
 
         // Constructor
         if (_options.GenerateJsDocComments)
@@ -92,8 +102,8 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine("   * @param page - The Playwright page instance.");
             sb.AppendLine("   */");
         }
-        sb.AppendLine("  constructor(page: Page) {");
-        sb.AppendLine("    this.page = page;");
+        sb.AppendLine("  constructor(page: import('@playwright/test').Page) {");
+        sb.AppendLine("    super(page);");
 
         foreach (var selector in component.Selectors)
         {
@@ -104,26 +114,25 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("  }");
         sb.AppendLine();
 
-        // Navigation method if route is available
-        if (!string.IsNullOrEmpty(component.RoutePath))
+        // Navigate method (implements abstract method from BasePage)
+        if (_options.GenerateJsDocComments)
         {
-            if (_options.GenerateJsDocComments)
-            {
-                sb.AppendLine("  /**");
-                sb.AppendLine("   * Navigates to this page.");
-                sb.AppendLine("   * @returns Promise that resolves when navigation is complete.");
-                sb.AppendLine("   */");
-            }
-            sb.AppendLine("  async goto(): Promise<void> {");
-            sb.AppendLine($"    await this.page.goto('/{component.RoutePath}');");
-            sb.AppendLine("  }");
-            sb.AppendLine();
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Navigate to this page.");
+            sb.AppendLine("   * @returns Promise that resolves when navigation is complete.");
+            sb.AppendLine("   */");
         }
+        var routePath = !string.IsNullOrEmpty(component.RoutePath) ? $"/{component.RoutePath}" : "/";
+        sb.AppendLine("  async navigate(): Promise<void> {");
+        sb.AppendLine($"    await this.page.goto('{routePath}');");
+        sb.AppendLine("    await this.waitForLoad();");
+        sb.AppendLine("  }");
+        sb.AppendLine();
 
         // Generate action methods for common element types
         GenerateActionMethods(sb, component.Selectors);
 
-        // Wait for load method
+        // Wait for load method (implements abstract method from BasePage)
         if (_options.GenerateJsDocComments)
         {
             sb.AppendLine("  /**");
@@ -132,7 +141,7 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine("   */");
         }
         sb.AppendLine("  async waitForLoad(): Promise<void> {");
-        sb.AppendLine($"    await this.page.waitForSelector('{component.Selector}');");
+        sb.AppendLine("    await this.page.waitForSelector(this.componentSelector);");
         sb.AppendLine("  }");
 
         sb.AppendLine("}");
@@ -208,7 +217,7 @@ public sealed class TemplateEngine : ITemplateEngine
         foreach (var component in project.Components)
         {
             var className = GetPageObjectClassName(component.Name);
-            var importPath = $"./pages/{ToKebabCase(component.Name)}.page";
+            var importPath = $"../page-objects/{ToKebabCase(component.Name)}.page";
             sb.AppendLine($"import {{ {className} }} from '{importPath}';");
         }
 
@@ -453,7 +462,7 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine(header);
             sb.AppendLine();
         }
-        sb.AppendLine("import { test, expect } from '../fixtures';");
+        sb.AppendLine("import { test, expect } from '../fixtures/fixtures';");
         sb.AppendLine();
 
         if (_options.GenerateJsDocComments)
@@ -487,6 +496,298 @@ public sealed class TemplateEngine : ITemplateEngine
         }
 
         sb.AppendLine("});");
+
+        return sb.ToString();
+    }
+
+    /// <inheritdoc />
+    public string GenerateTimeoutConfig()
+    {
+        var sb = new StringBuilder();
+        var fileName = "timeout.config.ts";
+
+        var header = GenerateFileHeader(fileName);
+        if (!string.IsNullOrEmpty(header))
+        {
+            sb.AppendLine(header);
+            sb.AppendLine();
+        }
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("/**");
+            sb.AppendLine(" * Timeout Configuration");
+            sb.AppendLine(" * ");
+            sb.AppendLine(" * Centralizes all timeout values used in tests.");
+            sb.AppendLine(" * NO magic numbers should appear directly in test files.");
+            sb.AppendLine(" */");
+        }
+
+        sb.AppendLine("export const TIMEOUTS = {");
+        sb.AppendLine("  // Navigation timeouts");
+        sb.AppendLine("  navigation: 30000,");
+        sb.AppendLine();
+        sb.AppendLine("  // API response timeouts");
+        sb.AppendLine("  apiResponse: 5000,");
+        sb.AppendLine("  apiSlowResponse: 15000,");
+        sb.AppendLine();
+        sb.AppendLine("  // Element visibility timeouts");
+        sb.AppendLine("  elementVisible: 10000,");
+        sb.AppendLine("  elementHidden: 5000,");
+        sb.AppendLine();
+        sb.AppendLine("  // SignalR connection timeouts");
+        sb.AppendLine("  signalrConnection: 15000,");
+        sb.AppendLine("  signalrConnectionFailure: 35000,");
+        sb.AppendLine("} as const;");
+
+        return sb.ToString();
+    }
+
+    /// <inheritdoc />
+    public string GenerateUrlsConfig()
+    {
+        var sb = new StringBuilder();
+        var fileName = "urls.config.ts";
+
+        var header = GenerateFileHeader(fileName);
+        if (!string.IsNullOrEmpty(header))
+        {
+            sb.AppendLine(header);
+            sb.AppendLine();
+        }
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("/**");
+            sb.AppendLine(" * URL Configuration");
+            sb.AppendLine(" * ");
+            sb.AppendLine(" * Centralizes all URLs and API endpoints used in tests.");
+            sb.AppendLine(" * NO URLs should appear directly in test files.");
+            sb.AppendLine(" */");
+            sb.AppendLine();
+        }
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("/**");
+            sb.AppendLine(" * Base URLs for the application");
+            sb.AppendLine(" */");
+        }
+        sb.AppendLine("export const URLS = {");
+        sb.AppendLine($"  base: process.env.BASE_URL || '{_options.BaseUrlPlaceholder}',");
+        sb.AppendLine("  dashboard: '/',");
+        sb.AppendLine("  configurations: '/configurations',");
+        sb.AppendLine("} as const;");
+        sb.AppendLine();
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("/**");
+            sb.AppendLine(" * API endpoints for route mocking");
+            sb.AppendLine(" * Using glob patterns for flexible matching");
+            sb.AppendLine(" */");
+        }
+        sb.AppendLine("export const API_ENDPOINTS = {");
+        sb.AppendLine("  // DFS (Distributed File System) endpoints");
+        sb.AppendLine("  files: '**/api/files',");
+        sb.AppendLine("  fileById: (id: string) => `**/api/files/${id}`,");
+        sb.AppendLine("  fileContent: (id: string) => `**/api/files/${id}/content`,");
+        sb.AppendLine();
+        sb.AppendLine("  // SignalR endpoints");
+        sb.AppendLine("  telemetryHub: '**/telemetryhub',");
+        sb.AppendLine("  telemetryHubNegotiate: '**/telemetryhub/negotiate**',");
+        sb.AppendLine("} as const;");
+
+        return sb.ToString();
+    }
+
+    /// <inheritdoc />
+    public string GenerateBasePage()
+    {
+        var sb = new StringBuilder();
+        var fileName = "base.page.ts";
+
+        var header = GenerateFileHeader(fileName);
+        if (!string.IsNullOrEmpty(header))
+        {
+            sb.AppendLine(header);
+            sb.AppendLine();
+        }
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("/**");
+            sb.AppendLine(" * Base Page Object");
+            sb.AppendLine(" *");
+            sb.AppendLine(" * Provides common functionality for all page objects.");
+            sb.AppendLine(" * All generated page objects extend from this base class.");
+            sb.AppendLine(" */");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("import { Page, Locator } from '@playwright/test';");
+        sb.AppendLine("import { TIMEOUTS } from '../configs/timeout.config';");
+        sb.AppendLine();
+
+        sb.AppendLine("export abstract class BasePage {");
+        sb.AppendLine("  constructor(protected page: Page) {}");
+        sb.AppendLine();
+
+        // Abstract navigate method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Navigate to the page.");
+            sb.AppendLine("   * @returns Promise that resolves when navigation is complete.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  abstract navigate(): Promise<void>;");
+        sb.AppendLine();
+
+        // Abstract waitForLoad method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Wait for the page to be fully loaded.");
+            sb.AppendLine("   * @returns Promise that resolves when the page is loaded.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  abstract waitForLoad(): Promise<void>;");
+        sb.AppendLine();
+
+        // getPageTitle method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Get the page title.");
+            sb.AppendLine("   * @returns Promise that resolves with the page title.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  async getPageTitle(): Promise<string> {");
+        sb.AppendLine("    return this.page.title();");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        // waitForNavigation method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Wait for navigation to complete.");
+            sb.AppendLine("   * @returns Promise that resolves when navigation is complete.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  protected async waitForNavigation(): Promise<void> {");
+        sb.AppendLine("    await this.page.waitForLoadState('networkidle', { timeout: TIMEOUTS.navigation });");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        // getLocator method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Get a locator by selector.");
+            sb.AppendLine("   * @param selector - The CSS selector.");
+            sb.AppendLine("   * @returns The Playwright locator.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  protected getLocator(selector: string): Locator {");
+        sb.AppendLine("    return this.page.locator(selector);");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        // isVisible method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Check if element is visible.");
+            sb.AppendLine("   * @param selector - The CSS selector.");
+            sb.AppendLine("   * @returns Promise that resolves with visibility status.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  protected async isVisible(selector: string): Promise<boolean> {");
+        sb.AppendLine("    return this.getLocator(selector).isVisible();");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        // waitForVisible method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Wait for element to be visible.");
+            sb.AppendLine("   * @param selector - The CSS selector.");
+            sb.AppendLine("   * @param timeout - Optional timeout in milliseconds.");
+            sb.AppendLine("   * @returns Promise that resolves when element is visible.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  protected async waitForVisible(");
+        sb.AppendLine("    selector: string,");
+        sb.AppendLine("    timeout: number = TIMEOUTS.elementVisible");
+        sb.AppendLine("  ): Promise<void> {");
+        sb.AppendLine("    await this.getLocator(selector).waitFor({ state: 'visible', timeout });");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        // waitForHidden method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Wait for element to be hidden.");
+            sb.AppendLine("   * @param selector - The CSS selector.");
+            sb.AppendLine("   * @param timeout - Optional timeout in milliseconds.");
+            sb.AppendLine("   * @returns Promise that resolves when element is hidden.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  protected async waitForHidden(");
+        sb.AppendLine("    selector: string,");
+        sb.AppendLine("    timeout: number = TIMEOUTS.elementHidden");
+        sb.AppendLine("  ): Promise<void> {");
+        sb.AppendLine("    await this.getLocator(selector).waitFor({ state: 'hidden', timeout });");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        // click method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Click an element.");
+            sb.AppendLine("   * @param selector - The CSS selector.");
+            sb.AppendLine("   * @returns Promise that resolves when click is complete.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  protected async click(selector: string): Promise<void> {");
+        sb.AppendLine("    await this.getLocator(selector).click();");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        // getTextContent method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Get text content of an element.");
+            sb.AppendLine("   * @param selector - The CSS selector.");
+            sb.AppendLine("   * @returns Promise that resolves with the text content.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  protected async getTextContent(selector: string): Promise<string> {");
+        sb.AppendLine("    const content = await this.getLocator(selector).textContent();");
+        sb.AppendLine("    return content || '';");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        // getCount method
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine("   * Get count of elements matching selector.");
+            sb.AppendLine("   * @param selector - The CSS selector.");
+            sb.AppendLine("   * @returns Promise that resolves with the element count.");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  protected async getCount(selector: string): Promise<number> {");
+        sb.AppendLine("    return this.getLocator(selector).count();");
+        sb.AppendLine("  }");
+
+        sb.AppendLine("}");
 
         return sb.ToString();
     }
@@ -808,9 +1109,13 @@ public sealed class TemplateEngine : ITemplateEngine
 
     private void GenerateActionMethods(StringBuilder sb, IReadOnlyList<ElementSelector> selectors)
     {
-        var buttons = selectors.Where(s => s.ElementType == "button").ToList();
-        var inputs = selectors.Where(s => s.ElementType is "input" or "textarea").ToList();
+        var buttons = selectors.Where(s => s.ElementType is "button" or "mat-button").ToList();
+        var inputs = selectors.Where(s => s.ElementType is "input" or "textarea" or "mat-form-field").ToList();
+        var clickableElements = selectors.Where(s => s.HasClickHandler || s.IsLink).ToList();
+        var tables = selectors.Where(s => s.IsTable).ToList();
+        var textElements = selectors.Where(s => !string.IsNullOrEmpty(s.TextContent)).ToList();
 
+        // Generate click methods for buttons
         foreach (var button in buttons)
         {
             if (_options.GenerateJsDocComments)
@@ -826,6 +1131,27 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine();
         }
 
+        // Generate click methods for elements with click handlers (that aren't already buttons)
+        foreach (var clickable in clickableElements.Where(c => !buttons.Contains(c)))
+        {
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Clicks the {clickable.PropertyName} element.");
+                if (!string.IsNullOrEmpty(clickable.ClickHandlerName))
+                {
+                    sb.AppendLine($"   * Triggers: {clickable.ClickHandlerName}()");
+                }
+                sb.AppendLine("   * @returns Promise that resolves when the click is complete.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async click{clickable.PropertyName}(): Promise<void> {{");
+            sb.AppendLine($"    await this.{ToCamelCase(clickable.PropertyName)}.click();");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+        }
+
+        // Generate fill methods for inputs
         foreach (var input in inputs)
         {
             if (_options.GenerateJsDocComments)
@@ -841,6 +1167,135 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine("  }");
             sb.AppendLine();
         }
+
+        // Generate expect visible methods for buttons
+        foreach (var button in buttons)
+        {
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Asserts that the {button.PropertyName} button is visible.");
+                sb.AppendLine("   * @returns Promise that resolves when assertion passes.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async expect{button.PropertyName}Visible(): Promise<void> {{");
+            sb.AppendLine($"    await expect(this.{ToCamelCase(button.PropertyName)}).toBeVisible();");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+        }
+
+        // Generate expect visible methods for text elements (that aren't buttons)
+        foreach (var textElement in textElements.Where(t => !buttons.Contains(t)))
+        {
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Asserts that the {textElement.PropertyName} element is visible.");
+                sb.AppendLine("   * @returns Promise that resolves when assertion passes.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async expect{textElement.PropertyName}Visible(): Promise<void> {{");
+            sb.AppendLine($"    await expect(this.{ToCamelCase(textElement.PropertyName)}).toBeVisible();");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+        }
+
+        // Generate table accessor methods
+        foreach (var table in tables)
+        {
+            var tableProp = ToCamelCase(table.PropertyName);
+            var isMaterial = table.IsMaterialComponent;
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Asserts that the {table.PropertyName} is visible.");
+                sb.AppendLine("   * @returns Promise that resolves when assertion passes.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async expect{table.PropertyName}Visible(): Promise<void> {{");
+            sb.AppendLine($"    await expect(this.{tableProp}).toBeVisible();");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Gets all rows from the {table.PropertyName}.");
+                sb.AppendLine("   * @returns Locator for table rows.");
+                sb.AppendLine("   */");
+            }
+            var rowSelector = isMaterial ? "mat-row, tr[mat-row], [mat-row]" : "tbody tr";
+            sb.AppendLine($"  get{table.PropertyName}Rows(): Locator {{");
+            sb.AppendLine($"    return this.{tableProp}.locator('{rowSelector}');");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Gets the row at the specified index from the {table.PropertyName}.");
+                sb.AppendLine("   * @param index - The zero-based row index.");
+                sb.AppendLine("   * @returns Locator for the specific row.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  get{table.PropertyName}Row(index: number): Locator {{");
+            sb.AppendLine($"    return this.get{table.PropertyName}Rows().nth(index);");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Gets the header cells from the {table.PropertyName}.");
+                sb.AppendLine("   * @returns Locator for table header cells.");
+                sb.AppendLine("   */");
+            }
+            var headerSelector = isMaterial ? "mat-header-cell, th[mat-header-cell], [mat-header-cell]" : "thead th, th";
+            sb.AppendLine($"  get{table.PropertyName}Headers(): Locator {{");
+            sb.AppendLine($"    return this.{tableProp}.locator('{headerSelector}');");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Gets cells from a specific column in the {table.PropertyName}.");
+                sb.AppendLine("   * @param columnIndex - The zero-based column index.");
+                sb.AppendLine("   * @returns Locator for cells in the specified column.");
+                sb.AppendLine("   */");
+            }
+            var cellSelector = isMaterial ? "mat-cell, td[mat-cell], [mat-cell]" : "td";
+            sb.AppendLine($"  get{table.PropertyName}Column(columnIndex: number): Locator {{");
+            sb.AppendLine($"    return this.{tableProp}.locator('{cellSelector}').filter({{ has: this.page.locator(`:nth-child(${{columnIndex + 1}})`) }});");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Gets the row count from the {table.PropertyName}.");
+                sb.AppendLine("   * @returns Promise that resolves with the number of rows.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async get{table.PropertyName}RowCount(): Promise<number> {{");
+            sb.AppendLine($"    return this.get{table.PropertyName}Rows().count();");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Clicks on a row in the {table.PropertyName}.");
+                sb.AppendLine("   * @param index - The zero-based row index.");
+                sb.AppendLine("   * @returns Promise that resolves when the click is complete.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async click{table.PropertyName}Row(index: number): Promise<void> {{");
+            sb.AppendLine($"    await this.get{table.PropertyName}Row(index).click();");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+        }
     }
 
     private static string GetLocatorMethod(ElementSelector selector)
@@ -849,8 +1304,12 @@ public sealed class TemplateEngine : ITemplateEngine
         {
             SelectorStrategy.TestId => $"page.getByTestId('{EscapeForJsString(selector.SelectorValue.Replace("[data-testid='", "").Replace("']", ""))}')",
             SelectorStrategy.Id => $"page.locator('{EscapeForJsString(selector.SelectorValue)}')",
-            SelectorStrategy.Role when selector.ElementType == "button" => $"page.getByRole('button', {{ name: '{EscapeForJsString(selector.TextContent ?? "")}' }})",
-            SelectorStrategy.Text => $"page.getByText('{EscapeForJsString(selector.TextContent ?? "")}')",
+            SelectorStrategy.Role when selector.ElementType == "button" && !string.IsNullOrEmpty(selector.TextContent)
+                => $"page.getByRole('button', {{ name: '{EscapeForJsString(selector.TextContent)}' }})",
+            SelectorStrategy.Role when selector.ElementType == "button"
+                => "page.locator('button')",
+            SelectorStrategy.Text when !string.IsNullOrEmpty(selector.TextContent)
+                => $"page.getByText('{EscapeForJsString(selector.TextContent)}')",
             SelectorStrategy.Placeholder => $"page.getByPlaceholder('{EscapeForJsString(selector.TextContent ?? "")}')",
             SelectorStrategy.Label => $"page.getByLabel('{EscapeForJsString(selector.TextContent ?? "")}')",
             _ => FormatLocatorWithQuotes(selector.SelectorValue)

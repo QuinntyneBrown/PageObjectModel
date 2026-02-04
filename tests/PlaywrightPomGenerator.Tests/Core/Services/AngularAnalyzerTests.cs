@@ -120,7 +120,7 @@ public sealed class AngularAnalyzerTests
     }
 
     [Fact]
-    public async Task AnalyzeWorkspaceAsync_WithLibraryProject_ShouldSkipLibrary()
+    public async Task AnalyzeWorkspaceAsync_WithLibraryProject_ShouldIncludeLibrary()
     {
         // Arrange
         _fileSystem.AddFile("/workspace/angular.json", """
@@ -141,13 +141,15 @@ public sealed class AngularAnalyzerTests
             }
             """);
         _fileSystem.AddDirectory("/workspace/src");
+        _fileSystem.AddDirectory("/workspace/projects/my-lib/src");
 
         // Act
         var result = await _analyzer.AnalyzeWorkspaceAsync("/workspace");
 
         // Assert
-        result.Projects.Should().HaveCount(1);
-        result.Projects[0].Name.Should().Be("my-app");
+        result.Projects.Should().HaveCount(2);
+        result.Projects.Should().Contain(p => p.Name == "my-app" && p.ProjectType == PlaywrightPomGenerator.Core.Models.AngularProjectType.Application);
+        result.Projects.Should().Contain(p => p.Name == "my-lib" && p.ProjectType == PlaywrightPomGenerator.Core.Models.AngularProjectType.Library);
     }
 
     [Fact]
@@ -280,5 +282,140 @@ public sealed class AngularAnalyzerTests
 
         // Assert
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void IsLibrary_WhenNgPackageJsonExists_ShouldReturnTrue()
+    {
+        // Arrange
+        _fileSystem.AddFile("/lib/ng-package.json", "{}");
+
+        // Act
+        var result = _analyzer.IsLibrary("/lib");
+
+        // Assert
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsLibrary_WhenNgPackageJsonDoesNotExist_ShouldReturnFalse()
+    {
+        // Arrange
+        _fileSystem.AddDirectory("/lib");
+
+        // Act
+        var result = _analyzer.IsLibrary("/lib");
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsLibrary_WithNullPath_ShouldThrowArgumentNullException()
+    {
+        // Act
+        var act = () => _analyzer.IsLibrary(null!);
+
+        // Assert
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task AnalyzeLibraryAsync_WithStandaloneLibrary_ShouldReturnLibraryInfo()
+    {
+        // Arrange
+        _fileSystem.AddFile("/my-lib/ng-package.json", "{}");
+        _fileSystem.AddDirectory("/my-lib/src/lib");
+        _fileSystem.AddFile("/my-lib/src/lib/my.component.ts", """
+            import { Component } from '@angular/core';
+
+            @Component({
+                selector: 'lib-my',
+                template: '<div>Hello</div>'
+            })
+            export class MyComponent {}
+            """);
+
+        // Act
+        var result = await _analyzer.AnalyzeLibraryAsync("/my-lib");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Name.Should().Be("my-lib");
+        result.ProjectType.Should().Be(PlaywrightPomGenerator.Core.Models.AngularProjectType.Library);
+        result.Components.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task AnalyzeLibraryAsync_WithWorkspace_ShouldReturnFirstLibrary()
+    {
+        // Arrange
+        _fileSystem.AddFile("/workspace/angular.json", """
+            {
+                "version": 1,
+                "projects": {
+                    "my-app": {
+                        "projectType": "application",
+                        "root": "",
+                        "sourceRoot": "src"
+                    },
+                    "my-lib": {
+                        "projectType": "library",
+                        "root": "projects/my-lib",
+                        "sourceRoot": "projects/my-lib/src"
+                    }
+                }
+            }
+            """);
+        _fileSystem.AddDirectory("/workspace/src");
+        _fileSystem.AddDirectory("/workspace/projects/my-lib/src");
+
+        // Act
+        var result = await _analyzer.AnalyzeLibraryAsync("/workspace");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Name.Should().Be("my-lib");
+        result.ProjectType.Should().Be(PlaywrightPomGenerator.Core.Models.AngularProjectType.Library);
+    }
+
+    [Fact]
+    public async Task AnalyzeLibraryAsync_WithWorkspaceNoLibrary_ShouldThrow()
+    {
+        // Arrange
+        _fileSystem.AddFile("/workspace/angular.json", """
+            {
+                "version": 1,
+                "projects": {
+                    "my-app": {
+                        "projectType": "application",
+                        "root": "",
+                        "sourceRoot": "src"
+                    }
+                }
+            }
+            """);
+        _fileSystem.AddDirectory("/workspace/src");
+
+        // Act
+        var act = () => _analyzer.AnalyzeLibraryAsync("/workspace");
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*No library project found*");
+    }
+
+    [Fact]
+    public async Task AnalyzeApplicationAsync_WithLibraryPath_ShouldReturnLibraryType()
+    {
+        // Arrange
+        _fileSystem.AddFile("/my-lib/ng-package.json", "{}");
+        _fileSystem.AddDirectory("/my-lib/src");
+
+        // Act
+        var result = await _analyzer.AnalyzeApplicationAsync("/my-lib");
+
+        // Assert
+        result.ProjectType.Should().Be(PlaywrightPomGenerator.Core.Models.AngularProjectType.Library);
     }
 }

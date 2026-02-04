@@ -62,10 +62,10 @@ public sealed class TemplateEngineTests
         var result = _engine.GeneratePageObject(component);
 
         // Assert
-        result.Should().Contain("import { Page, Locator } from '@playwright/test'");
-        result.Should().Contain("export class LoginPage");
-        result.Should().Contain("readonly page: Page");
-        result.Should().Contain("constructor(page: Page)");
+        result.Should().Contain("import { Locator, expect } from '@playwright/test'");
+        result.Should().Contain("import { BasePage } from './base.page'");
+        result.Should().Contain("export class LoginPage extends BasePage");
+        result.Should().Contain("super(page)");
     }
 
     [Fact]
@@ -186,7 +186,7 @@ public sealed class TemplateEngineTests
         var result = _engine.GenerateTestSpec(component);
 
         // Assert
-        result.Should().Contain("import { test, expect } from '../fixtures'");
+        result.Should().Contain("import { test, expect } from '../fixtures/fixtures'");
         result.Should().Contain("test.describe('LoginComponent'");
         result.Should().Contain("should display the component");
     }
@@ -217,7 +217,7 @@ public sealed class TemplateEngineTests
         var result = _engine.GeneratePageObject(component);
 
         // Assert - should start directly with import
-        result.Should().StartWith("import { Page, Locator }");
+        result.Should().StartWith("import { Locator, expect }");
     }
 
     [Fact]
@@ -232,7 +232,8 @@ public sealed class TemplateEngineTests
 
         // Assert
         result.Should().StartWith("// Custom header for login.page.ts");
-        result.Should().Contain("import { Page, Locator }");
+        result.Should().Contain("import { Locator, expect }");
+        result.Should().Contain("import { BasePage }");
     }
 
     [Fact]

@@ -4,9 +4,9 @@ namespace PlaygroundRunner;
 
 class Program
 {
-    private const string RepoUrl = "https://github.com/QuinntyneBrown/CodeReviewTool";
+    private const string RepoUrl = "https://github.com/QuinntyneBrown/Books";
     private const string AngularWorkspacePath = "src/Ui";
-    private const string TargetProject = "code-review-tool"; // Project within the workspace
+    private const string TargetLibrary = "components"; // Angular library within the workspace
     private const bool GenerateSignalRMock = true; // Generate SignalR mock fixture
 
     static async Task<int> Main(string[] args)
@@ -18,13 +18,13 @@ class Program
         Console.WriteLine();
         Console.WriteLine($"Repository: {RepoUrl}");
         Console.WriteLine($"Angular workspace: {AngularWorkspacePath}");
-        Console.WriteLine($"Target project: {TargetProject}");
+        Console.WriteLine($"Target library: {TargetLibrary}");
         Console.WriteLine($"Artifacts output: {artifactsPath}");
         Console.WriteLine($"CLI project: {cliProjectPath}");
         Console.WriteLine();
 
         // Create temp directory for cloning
-        var tempDir = Path.Combine(Path.GetTempPath(), $"CodeReviewTool_{Guid.NewGuid():N}");
+        var tempDir = Path.Combine(Path.GetTempPath(), $"Books_{Guid.NewGuid():N}");
 
         try
         {
@@ -75,44 +75,27 @@ class Program
             string cliArgs;
             int generateResult;
 
-            if (string.IsNullOrEmpty(TargetProject))
+            // Use the 'lib' command for Angular library
+            var libraryPath = Path.Combine(angularWorkspacePath, "projects", TargetLibrary);
+            cliArgs = $"run --project \"{cliProjectPath}\" -- lib \"{libraryPath}\" -o \"{artifactsPath}\"";
+            Console.WriteLine($"Executing: dotnet {cliArgs}");
+            Console.WriteLine();
+
+            generateResult = await RunProcessAsync("dotnet", cliArgs);
+            if (generateResult != 0)
             {
-                // Standalone app - use 'app' command directly
-                cliArgs = $"run --project \"{cliProjectPath}\" -- app \"{angularWorkspacePath}\" -o \"{artifactsPath}\"";
+                Console.Error.WriteLine("Generation failed with lib command. Trying workspace command...");
+
+                // Fallback: try workspace command to generate for all projects including libraries
+                cliArgs = $"run --project \"{cliProjectPath}\" -- workspace \"{angularWorkspacePath}\" -o \"{artifactsPath}\"";
                 Console.WriteLine($"Executing: dotnet {cliArgs}");
                 Console.WriteLine();
 
                 generateResult = await RunProcessAsync("dotnet", cliArgs);
                 if (generateResult != 0)
                 {
-                    Console.Error.WriteLine("Generation failed with app command.");
+                    Console.Error.WriteLine("Generation failed with workspace command as well.");
                     return 1;
-                }
-            }
-            else
-            {
-                // Workspace with specific project - use 'workspace' command with -p option
-                cliArgs = $"run --project \"{cliProjectPath}\" -- workspace \"{angularWorkspacePath}\" -o \"{artifactsPath}\" -p {TargetProject}";
-                Console.WriteLine($"Executing: dotnet {cliArgs}");
-                Console.WriteLine();
-
-                generateResult = await RunProcessAsync("dotnet", cliArgs);
-                if (generateResult != 0)
-                {
-                    Console.Error.WriteLine("Generation failed. Trying with 'app' command instead...");
-
-                    // Try with the specific project path
-                    var projectPath = Path.Combine(angularWorkspacePath, "projects", TargetProject);
-                    cliArgs = $"run --project \"{cliProjectPath}\" -- app \"{projectPath}\" -o \"{artifactsPath}\"";
-                    Console.WriteLine($"Executing: dotnet {cliArgs}");
-                    Console.WriteLine();
-
-                    generateResult = await RunProcessAsync("dotnet", cliArgs);
-                    if (generateResult != 0)
-                    {
-                        Console.Error.WriteLine("Generation failed with app command as well.");
-                        return 1;
-                    }
                 }
             }
 
@@ -125,10 +108,8 @@ class Program
             {
                 Console.WriteLine("Step 3b: Generating SignalR mock fixture...");
 
-                // Determine the output path for signalr mock (same as the project artifacts)
-                var signalrOutputPath = string.IsNullOrEmpty(TargetProject)
-                    ? artifactsPath
-                    : Path.Combine(artifactsPath, TargetProject, "e2e");
+                // Determine the output path for signalr mock
+                var signalrOutputPath = artifactsPath;
 
                 cliArgs = $"run --project \"{cliProjectPath}\" -- signalr-mock \"{signalrOutputPath}\"";
                 Console.WriteLine($"Executing: dotnet {cliArgs}");

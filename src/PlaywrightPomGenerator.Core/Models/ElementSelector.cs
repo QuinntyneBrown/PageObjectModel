@@ -34,6 +34,31 @@ public sealed record ElementSelector
     /// Gets additional attributes found on the element.
     /// </summary>
     public IReadOnlyDictionary<string, string> Attributes { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// Gets whether the element has a click handler.
+    /// </summary>
+    public bool HasClickHandler { get; init; }
+
+    /// <summary>
+    /// Gets whether the element is a link (href, routerLink).
+    /// </summary>
+    public bool IsLink { get; init; }
+
+    /// <summary>
+    /// Gets whether the element is a table or mat-table.
+    /// </summary>
+    public bool IsTable { get; init; }
+
+    /// <summary>
+    /// Gets whether the element is an Angular Material component.
+    /// </summary>
+    public bool IsMaterialComponent { get; init; }
+
+    /// <summary>
+    /// Gets the click handler method name if available.
+    /// </summary>
+    public string? ClickHandlerName { get; init; }
 }
 
 /// <summary>

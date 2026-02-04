@@ -108,4 +108,37 @@ public sealed class CommandTests
         command.OutputArgument.Should().NotBeNull();
         command.OutputArgument.Name.Should().Be("output");
     }
+
+    [Fact]
+    public void GenerateLibraryCommand_ShouldHaveCorrectNameAndDescription()
+    {
+        // Act
+        var command = new GenerateLibraryCommand();
+
+        // Assert
+        command.Name.Should().Be("lib");
+        command.Description.Should().Contain("library");
+    }
+
+    [Fact]
+    public void GenerateLibraryCommand_ShouldHaveRequiredArguments()
+    {
+        // Act
+        var command = new GenerateLibraryCommand();
+
+        // Assert
+        command.PathArgument.Should().NotBeNull();
+        command.PathArgument.Name.Should().Be("path");
+    }
+
+    [Fact]
+    public void GenerateLibraryCommand_ShouldHaveOutputOption()
+    {
+        // Act
+        var command = new GenerateLibraryCommand();
+
+        // Assert
+        command.OutputOption.Should().NotBeNull();
+        command.OutputOption.Name.Should().Be("output");
+    }
 }

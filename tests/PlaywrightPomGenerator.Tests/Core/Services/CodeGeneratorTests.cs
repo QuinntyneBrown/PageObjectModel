@@ -83,9 +83,11 @@ public sealed class CodeGeneratorTests
         await _generator.GenerateForApplicationAsync(project, "/output");
 
         // Assert
-        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("pages"));
-        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("selectors"));
+        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("page-objects"));
+        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("helpers"));
         _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("tests"));
+        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("configs"));
+        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("fixtures"));
     }
 
     [Fact]

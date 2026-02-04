@@ -40,4 +40,21 @@ public interface IAngularAnalyzer
     /// <param name="path">The path to check.</param>
     /// <returns>True if the path is an Angular application, false otherwise.</returns>
     bool IsApplication(string path);
+
+    /// <summary>
+    /// Determines if the specified path is an Angular library.
+    /// </summary>
+    /// <param name="path">The path to check.</param>
+    /// <returns>True if the path is an Angular library (has ng-package.json), false otherwise.</returns>
+    bool IsLibrary(string path);
+
+    /// <summary>
+    /// Analyzes a single Angular library at the specified path.
+    /// </summary>
+    /// <param name="libraryPath">The path to the Angular library.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Information about the Angular library project.</returns>
+    Task<AngularProjectInfo> AnalyzeLibraryAsync(
+        string libraryPath,
+        CancellationToken cancellationToken = default);
 }
