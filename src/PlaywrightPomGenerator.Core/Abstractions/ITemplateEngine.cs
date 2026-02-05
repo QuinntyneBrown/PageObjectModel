@@ -68,10 +68,11 @@ public interface ITemplateEngine
     string GenerateTimeoutConfig();
 
     /// <summary>
-    /// Generates the URLs configuration file with URL constants.
+    /// Generates the URLs configuration file with URL constants for routable pages.
     /// </summary>
+    /// <param name="project">The project information containing routable components.</param>
     /// <returns>The generated TypeScript code.</returns>
-    string GenerateUrlsConfig();
+    string GenerateUrlsConfig(AngularProjectInfo project);
 
     /// <summary>
     /// Generates the base page class that all page objects extend from.

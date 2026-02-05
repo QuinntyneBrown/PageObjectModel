@@ -53,8 +53,26 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine(header);
             sb.AppendLine();
         }
-        sb.AppendLine("import { Locator, expect } from '@playwright/test';");
+        // Include template content as comment in debug mode
+        if (_options.DebugMode && !string.IsNullOrEmpty(component.TemplateContent))
+        {
+            sb.AppendLine("/*");
+            sb.AppendLine(" * DEBUG: HTML Template Content");
+            sb.AppendLine(" * =============================");
+            foreach (var line in component.TemplateContent.Split('\n'))
+            {
+                sb.AppendLine($" * {line.TrimEnd('\r')}");
+            }
+            sb.AppendLine(" */");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("import { Page, Locator, expect } from '@playwright/test';");
         sb.AppendLine("import { BasePage } from './base.page';");
+        if (component.IsRoutable)
+        {
+            sb.AppendLine("import { URLS } from '../configs/urls.config';");
+        }
         sb.AppendLine();
 
         if (_options.GenerateJsDocComments)
@@ -102,7 +120,7 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine("   * @param page - The Playwright page instance.");
             sb.AppendLine("   */");
         }
-        sb.AppendLine("  constructor(page: import('@playwright/test').Page) {");
+        sb.AppendLine("  constructor(page: Page) {");
         sb.AppendLine("    super(page);");
 
         foreach (var selector in component.Selectors)
@@ -122,10 +140,17 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine("   * @returns Promise that resolves when navigation is complete.");
             sb.AppendLine("   */");
         }
-        var routePath = !string.IsNullOrEmpty(component.RoutePath) ? $"/{component.RoutePath}" : "/";
         sb.AppendLine("  async navigate(): Promise<void> {");
-        sb.AppendLine($"    await this.page.goto('{routePath}');");
-        sb.AppendLine("    await this.waitForLoad();");
+        if (component.IsRoutable)
+        {
+            var urlKey = ToCamelCase(className);
+            sb.AppendLine($"    await this.page.goto(URLS.{urlKey});");
+            sb.AppendLine("    await this.waitForLoad();");
+        }
+        else
+        {
+            sb.AppendLine($"    throw new Error('{className} is not a routable component. Use it as a child component within a page.');");
+        }
         sb.AppendLine("  }");
         sb.AppendLine();
 
@@ -226,28 +251,19 @@ public sealed class TemplateEngine : ITemplateEngine
         if (_options.GenerateJsDocComments)
         {
             sb.AppendLine("/**");
-            sb.AppendLine(" * Custom fixture type extending Playwright's test fixtures.");
+            sb.AppendLine(" * Extended test object with page object fixtures.");
             sb.AppendLine(" */");
         }
 
-        sb.AppendLine("type Fixtures = {");
+        // Generate inline type annotation for fixtures
+        sb.AppendLine("export const test = base.extend<{");
         foreach (var component in project.Components)
         {
             var className = GetPageObjectClassName(component.Name);
             var propName = ToCamelCase(className);
             sb.AppendLine($"  {propName}: {className};");
         }
-        sb.AppendLine("};");
-        sb.AppendLine();
-
-        if (_options.GenerateJsDocComments)
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine(" * Extended test object with page object fixtures.");
-            sb.AppendLine(" */");
-        }
-
-        sb.AppendLine("export const test = base.extend<Fixtures>({");
+        sb.AppendLine("}>({");
 
         foreach (var component in project.Components)
         {
@@ -544,8 +560,10 @@ public sealed class TemplateEngine : ITemplateEngine
     }
 
     /// <inheritdoc />
-    public string GenerateUrlsConfig()
+    public string GenerateUrlsConfig(AngularProjectInfo project)
     {
+        ArgumentNullException.ThrowIfNull(project);
+
         var sb = new StringBuilder();
         var fileName = "urls.config.ts";
 
@@ -570,13 +588,23 @@ public sealed class TemplateEngine : ITemplateEngine
         if (_options.GenerateJsDocComments)
         {
             sb.AppendLine("/**");
-            sb.AppendLine(" * Base URLs for the application");
+            sb.AppendLine(" * Page URLs for the application");
             sb.AppendLine(" */");
         }
         sb.AppendLine("export const URLS = {");
         sb.AppendLine($"  base: process.env.BASE_URL || '{_options.BaseUrlPlaceholder}',");
-        sb.AppendLine("  dashboard: '/',");
-        sb.AppendLine("  configurations: '/configurations',");
+
+        // Generate URL entries for routable components
+        var routableComponents = project.Components.Where(c => c.IsRoutable).ToList();
+        foreach (var component in routableComponents)
+        {
+            var urlKey = ToCamelCase(GetPageObjectClassName(component.Name));
+            var routePath = !string.IsNullOrEmpty(component.RoutePath)
+                ? $"/{component.RoutePath}"
+                : $"/{ToKebabCase(component.Name)}";
+            sb.AppendLine($"  {urlKey}: '{routePath}',");
+        }
+
         sb.AppendLine("} as const;");
         sb.AppendLine();
 
@@ -1114,6 +1142,7 @@ public sealed class TemplateEngine : ITemplateEngine
         var clickableElements = selectors.Where(s => s.HasClickHandler || s.IsLink).ToList();
         var tables = selectors.Where(s => s.IsTable).ToList();
         var textElements = selectors.Where(s => !string.IsNullOrEmpty(s.TextContent)).ToList();
+        var textContainerElements = selectors.Where(s => s.IsTextElement && string.IsNullOrEmpty(s.TextContent)).ToList();
 
         // Generate click methods for buttons
         foreach (var button in buttons)
@@ -1196,6 +1225,48 @@ public sealed class TemplateEngine : ITemplateEngine
             }
             sb.AppendLine($"  async expect{textElement.PropertyName}Visible(): Promise<void> {{");
             sb.AppendLine($"    await expect(this.{ToCamelCase(textElement.PropertyName)}).toBeVisible();");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+        }
+
+        // Generate expect text content methods for text elements (that aren't buttons)
+        foreach (var textElement in textElements.Where(t => !buttons.Contains(t)))
+        {
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Asserts that the {textElement.PropertyName} element has the expected text.");
+                sb.AppendLine("   * @param expected - The expected text content.");
+                sb.AppendLine("   * @returns Promise that resolves when assertion passes.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async expect{textElement.PropertyName}HasText(expected: string): Promise<void> {{");
+            sb.AppendLine($"    await expect(this.{ToCamelCase(textElement.PropertyName)}).toHaveText(expected);");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Asserts that the {textElement.PropertyName} element contains the expected text.");
+                sb.AppendLine("   * @param expected - The expected text to contain.");
+                sb.AppendLine("   * @returns Promise that resolves when assertion passes.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async expect{textElement.PropertyName}ContainsText(expected: string): Promise<void> {{");
+            sb.AppendLine($"    await expect(this.{ToCamelCase(textElement.PropertyName)}).toContainText(expected);");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Gets the text content of the {textElement.PropertyName} element.");
+                sb.AppendLine("   * @returns Promise that resolves with the text content.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async get{textElement.PropertyName}Text(): Promise<string | null> {{");
+            sb.AppendLine($"    return this.{ToCamelCase(textElement.PropertyName)}.textContent();");
             sb.AppendLine("  }");
             sb.AppendLine();
         }
@@ -1296,6 +1367,60 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine("  }");
             sb.AppendLine();
         }
+
+        // Generate methods for text container elements with dynamic content
+        foreach (var textContainer in textContainerElements)
+        {
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Asserts that the {textContainer.PropertyName} element is visible.");
+                sb.AppendLine("   * @returns Promise that resolves when assertion passes.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async expect{textContainer.PropertyName}Visible(): Promise<void> {{");
+            sb.AppendLine($"    await expect(this.{ToCamelCase(textContainer.PropertyName)}).toBeVisible();");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Asserts that the {textContainer.PropertyName} element has the expected text.");
+                sb.AppendLine("   * @param expected - The expected text content.");
+                sb.AppendLine("   * @returns Promise that resolves when assertion passes.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async expect{textContainer.PropertyName}HasText(expected: string): Promise<void> {{");
+            sb.AppendLine($"    await expect(this.{ToCamelCase(textContainer.PropertyName)}).toHaveText(expected);");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Asserts that the {textContainer.PropertyName} element contains the expected text.");
+                sb.AppendLine("   * @param expected - The expected text to contain.");
+                sb.AppendLine("   * @returns Promise that resolves when assertion passes.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async expect{textContainer.PropertyName}ContainsText(expected: string): Promise<void> {{");
+            sb.AppendLine($"    await expect(this.{ToCamelCase(textContainer.PropertyName)}).toContainText(expected);");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Gets the text content of the {textContainer.PropertyName} element.");
+                sb.AppendLine("   * @returns Promise that resolves with the text content.");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  async get{textContainer.PropertyName}Text(): Promise<string | null> {{");
+            sb.AppendLine($"    return this.{ToCamelCase(textContainer.PropertyName)}.textContent();");
+            sb.AppendLine("  }");
+            sb.AppendLine();
+        }
     }
 
     private static string GetLocatorMethod(ElementSelector selector)
@@ -1336,7 +1461,7 @@ public sealed class TemplateEngine : ITemplateEngine
         var name = componentName.EndsWith("Component", StringComparison.Ordinal)
             ? componentName[..^"Component".Length]
             : componentName;
-        return $"{name}Page";
+        return name;
     }
 
     private static string ToCamelCase(string input)

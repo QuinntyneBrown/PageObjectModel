@@ -95,7 +95,7 @@ public sealed class CodeGenerator : ICodeGenerator
             generatedFiles.Add(timeoutConfigFile);
 
             // Generate urls config
-            var urlsConfigFile = await GenerateUrlsConfigFileAsync(configsDir, cancellationToken)
+            var urlsConfigFile = await GenerateUrlsConfigFileAsync(deduplicatedProject, configsDir, cancellationToken)
                 .ConfigureAwait(false);
             generatedFiles.Add(urlsConfigFile);
 
@@ -466,10 +466,11 @@ public sealed class CodeGenerator : ICodeGenerator
     }
 
     private async Task<GeneratedFile> GenerateUrlsConfigFileAsync(
+        AngularProjectInfo project,
         string configsDir,
         CancellationToken cancellationToken)
     {
-        var content = _templateEngine.GenerateUrlsConfig();
+        var content = _templateEngine.GenerateUrlsConfig(project);
         var filePath = _fileSystem.CombinePath(configsDir, "urls.config.ts");
 
         await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken)

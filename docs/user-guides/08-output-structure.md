@@ -359,6 +359,104 @@ export default defineConfig({
 });
 ```
 
+## Dynamic Content Detection
+
+The generator automatically detects elements that will display dynamic content and creates appropriate selectors and methods.
+
+### Angular Interpolation
+
+Elements containing `{{ property }}` bindings are detected:
+
+```html
+<!-- Template -->
+<h1>{{ title }}</h1>
+<p>{{ description }}</p>
+<div>{{ content }}</div>
+```
+
+```typescript
+// Generated page object
+export class MyComponent extends BasePage {
+  readonly heading1: Locator;
+  readonly paragraph: Locator;
+  readonly container: Locator;
+
+  async expectHeading1Visible(): Promise<void> {
+    await expect(this.heading1).toBeVisible();
+  }
+
+  async expectHeading1HasText(expected: string): Promise<void> {
+    await expect(this.heading1).toHaveText(expected);
+  }
+
+  async getHeading1Text(): Promise<string | null> {
+    return this.heading1.textContent();
+  }
+  // ... similar methods for other elements
+}
+```
+
+### Content Projection (ng-content)
+
+Elements containing `<ng-content>` are detected:
+
+```html
+<!-- Template -->
+<div class="card-body">
+  <ng-content></ng-content>
+</div>
+<span class="header">
+  <ng-content select="[header]"></ng-content>
+</span>
+```
+
+```typescript
+// Generated page object
+export class Card extends BasePage {
+  readonly container: Locator;
+  readonly textSpan: Locator;
+
+  async expectContainerVisible(): Promise<void> {
+    await expect(this.container).toBeVisible();
+  }
+  // ... similar methods
+}
+```
+
+## Debug Mode
+
+When using `--debug` flag, the HTML template is included as a comment at the top of generated page object files:
+
+```bash
+playwright-pom-gen lib ./projects/components -o ./e2e --debug
+```
+
+**Result:**
+
+```typescript
+/*
+ * DEBUG: HTML Template Content
+ * =============================
+ * <div class="cb-page-header">
+ *   <div class="cb-page-header__content">
+ *     <h1>{{ title }}</h1>
+ *     <p *ngIf="subtitle">{{ subtitle }}</p>
+ *   </div>
+ *   <div class="cb-page-header__actions">
+ *     <ng-content></ng-content>
+ *   </div>
+ * </div>
+ */
+
+import { Page, Locator, expect } from '@playwright/test';
+// ...
+```
+
+This is useful for:
+- Understanding what template was parsed
+- Debugging selector generation issues
+- Verifying correct element detection
+
 ## File Headers
 
 All generated files can include a custom header (configured via `--header` option or `FileHeader` configuration):

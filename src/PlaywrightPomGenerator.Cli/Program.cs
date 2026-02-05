@@ -29,6 +29,12 @@ public static class Program
         "Suffix for test files (default: 'spec'). For example, 'test' produces 'component.test.ts'.");
 
     /// <summary>
+    /// Global option for debug mode.
+    /// </summary>
+    public static Option<bool> DebugOption { get; } = new("--debug",
+        "Enable debug mode. When enabled, the HTML template is included as a comment in generated page object files.");
+
+    /// <summary>
     /// Main entry point.
     /// </summary>
     /// <param name="args">Command line arguments.</param>
@@ -39,11 +45,13 @@ public static class Program
         var preParseCommand = new RootCommand();
         preParseCommand.AddGlobalOption(HeaderOption);
         preParseCommand.AddGlobalOption(TestSuffixOption);
+        preParseCommand.AddGlobalOption(DebugOption);
         var preParseResult = preParseCommand.Parse(args);
         var headerValue = preParseResult.GetValueForOption(HeaderOption);
         var testSuffixValue = preParseResult.GetValueForOption(TestSuffixOption);
+        var debugValue = preParseResult.GetValueForOption(DebugOption);
 
-        using var host = CreateHost(args, headerValue, testSuffixValue);
+        using var host = CreateHost(args, headerValue, testSuffixValue, debugValue);
         var rootCommand = BuildRootCommand(host.Services);
 
         return await rootCommand.InvokeAsync(args).ConfigureAwait(false);
@@ -55,8 +63,9 @@ public static class Program
     /// <param name="args">Command line arguments.</param>
     /// <param name="headerOverride">Optional header template override from CLI.</param>
     /// <param name="testSuffixOverride">Optional test suffix override from CLI.</param>
+    /// <param name="debugMode">Whether debug mode is enabled.</param>
     /// <returns>The configured host.</returns>
-    public static IHost CreateHost(string[] args, string? headerOverride = null, string? testSuffixOverride = null)
+    public static IHost CreateHost(string[] args, string? headerOverride = null, string? testSuffixOverride = null, bool debugMode = false)
     {
         return Host.CreateDefaultBuilder(args)
             .ConfigureAppConfiguration((context, config) =>
@@ -74,7 +83,7 @@ public static class Program
             })
             .ConfigureServices((context, services) =>
             {
-                ConfigureServices(services, context.Configuration, headerOverride, testSuffixOverride);
+                ConfigureServices(services, context.Configuration, headerOverride, testSuffixOverride, debugMode);
             })
             .Build();
     }
@@ -149,9 +158,10 @@ public static class Program
             signalRMockCommand
         };
 
-        // Add global options for header and test suffix
+        // Add global options for header, test suffix, and debug mode
         rootCommand.AddGlobalOption(HeaderOption);
         rootCommand.AddGlobalOption(TestSuffixOption);
+        rootCommand.AddGlobalOption(DebugOption);
 
         return rootCommand;
     }
@@ -163,17 +173,19 @@ public static class Program
     /// <param name="configuration">The configuration.</param>
     /// <param name="headerOverride">Optional header template override from CLI.</param>
     /// <param name="testSuffixOverride">Optional test suffix override from CLI.</param>
+    /// <param name="debugMode">Whether debug mode is enabled.</param>
     public static void ConfigureServices(
         IServiceCollection services,
         IConfiguration configuration,
         string? headerOverride = null,
-        string? testSuffixOverride = null)
+        string? testSuffixOverride = null,
+        bool debugMode = false)
     {
         // Configuration
         services.Configure<GeneratorOptions>(configuration.GetSection(GeneratorOptions.SectionName));
 
         // Apply CLI overrides if provided
-        if (headerOverride is not null || testSuffixOverride is not null)
+        if (headerOverride is not null || testSuffixOverride is not null || debugMode)
         {
             services.PostConfigure<GeneratorOptions>(options =>
             {
@@ -184,6 +196,10 @@ public static class Program
                 if (testSuffixOverride is not null)
                 {
                     options.TestFileSuffix = testSuffixOverride;
+                }
+                if (debugMode)
+                {
+                    options.DebugMode = true;
                 }
             });
         }

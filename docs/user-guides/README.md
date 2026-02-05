@@ -122,6 +122,7 @@ playwright-pom-gen artifacts . --page-objects --selectors
 ## 💡 Tips
 
 - Use `--help` with any command for quick reference
+- Use `--debug` to include HTML templates in generated files for debugging
 - Enable debug logging when troubleshooting
 - Commit configuration files to version control
 - Extend generated files, don't modify them

@@ -111,6 +111,55 @@ The `--test-suffix` option overrides:
 **Default:**
 If not specified, uses value from configuration (or `"spec"` if not configured).
 
+### --debug
+
+Enable debug mode to include HTML template content as comments in generated page object files.
+
+**Syntax:**
+```bash
+playwright-pom-gen <command> <args> --debug
+```
+
+**Purpose:**
+- Helps developers understand what template was parsed
+- Useful for debugging selector generation issues
+- Shows the source HTML that led to the generated selectors
+
+**Example:**
+
+```bash
+# Generate with debug mode
+playwright-pom-gen app ./src/my-app --debug
+
+# Combine with other options
+playwright-pom-gen lib ./projects/components -o ./e2e --debug
+```
+
+**Result:**
+
+```typescript
+/*
+ * DEBUG: HTML Template Content
+ * =============================
+ * <div class="cb-page-header">
+ *   <h1>{{ title }}</h1>
+ *   <p *ngIf="subtitle">{{ subtitle }}</p>
+ * </div>
+ */
+
+import { Page, Locator, expect } from '@playwright/test';
+import { BasePage } from './base.page';
+
+export class PageHeader extends BasePage {
+  readonly heading1: Locator;
+  readonly paragraph: Locator;
+  // ...
+}
+```
+
+**Default:**
+Debug mode is disabled by default. Use `--debug` flag to enable.
+
 ## Using Global Options
 
 ### With Any Command
@@ -132,6 +181,11 @@ playwright-pom-gen workspace . \
 # artifacts command
 playwright-pom-gen artifacts . \
   --fixtures --configs \
+  --header "// Auto-generated"
+
+# lib command with debug mode
+playwright-pom-gen lib ./projects/components \
+  --debug \
   --header "// Auto-generated"
 
 # signalr-mock command

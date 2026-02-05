@@ -26,6 +26,11 @@ public sealed record AngularComponentInfo
     public string? TemplatePath { get; init; }
 
     /// <summary>
+    /// Gets the template content (HTML) for debugging purposes.
+    /// </summary>
+    public string? TemplateContent { get; init; }
+
+    /// <summary>
     /// Gets the collection of selectable elements found in the template.
     /// </summary>
     public IReadOnlyList<ElementSelector> Selectors { get; init; } = [];
@@ -44,4 +49,9 @@ public sealed record AngularComponentInfo
     /// Gets the route path if this component is routed.
     /// </summary>
     public string? RoutePath { get; init; }
+
+    /// <summary>
+    /// Gets whether this component is a routable page (not a dialog, modal, button, etc.).
+    /// </summary>
+    public bool IsRoutable { get; init; }
 }

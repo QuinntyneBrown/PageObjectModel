@@ -8,6 +8,7 @@ class Program
     private const string AngularWorkspacePath = "src/Ui";
     private const string TargetLibrary = "components"; // Angular library within the workspace
     private const bool GenerateSignalRMock = true; // Generate SignalR mock fixture
+    private const bool DebugMode = true; // Include HTML template as comments in generated page objects
 
     static async Task<int> Main(string[] args)
     {
@@ -21,6 +22,7 @@ class Program
         Console.WriteLine($"Target library: {TargetLibrary}");
         Console.WriteLine($"Artifacts output: {artifactsPath}");
         Console.WriteLine($"CLI project: {cliProjectPath}");
+        Console.WriteLine($"Debug mode: {DebugMode}");
         Console.WriteLine();
 
         // Create temp directory for cloning
@@ -77,7 +79,8 @@ class Program
 
             // Use the 'lib' command for Angular library
             var libraryPath = Path.Combine(angularWorkspacePath, "projects", TargetLibrary);
-            cliArgs = $"run --project \"{cliProjectPath}\" -- lib \"{libraryPath}\" -o \"{artifactsPath}\"";
+            var debugFlag = DebugMode ? " --debug" : "";
+            cliArgs = $"run --project \"{cliProjectPath}\" -- lib \"{libraryPath}\" -o \"{artifactsPath}\"{debugFlag}";
             Console.WriteLine($"Executing: dotnet {cliArgs}");
             Console.WriteLine();
 
@@ -87,7 +90,7 @@ class Program
                 Console.Error.WriteLine("Generation failed with lib command. Trying workspace command...");
 
                 // Fallback: try workspace command to generate for all projects including libraries
-                cliArgs = $"run --project \"{cliProjectPath}\" -- workspace \"{angularWorkspacePath}\" -o \"{artifactsPath}\"";
+                cliArgs = $"run --project \"{cliProjectPath}\" -- workspace \"{angularWorkspacePath}\" -o \"{artifactsPath}\"{debugFlag}";
                 Console.WriteLine($"Executing: dotnet {cliArgs}");
                 Console.WriteLine();
 

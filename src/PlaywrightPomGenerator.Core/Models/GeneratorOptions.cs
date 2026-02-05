@@ -27,7 +27,7 @@ public sealed class GeneratorOptions
     /// <summary>
     /// Gets or sets the tool version string used in generated file headers.
     /// </summary>
-    public string ToolVersion { get; set; } = "1.2.0";
+    public string ToolVersion { get; set; } = "1.4.0";
 
     /// <summary>
     /// Gets or sets the output directory name for generated test files.
@@ -48,4 +48,10 @@ public sealed class GeneratorOptions
     /// Gets or sets the base URL placeholder for generated tests.
     /// </summary>
     public string BaseUrlPlaceholder { get; set; } = "http://localhost:4200";
+
+    /// <summary>
+    /// Gets or sets whether debug mode is enabled.
+    /// When enabled, the HTML template is included as a comment in generated page object files.
+    /// </summary>
+    public bool DebugMode { get; set; } = false;
 }

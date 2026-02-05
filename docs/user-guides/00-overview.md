@@ -85,6 +85,7 @@ Available across all commands:
 
 - `--header` - Custom file header template with placeholders
 - `--test-suffix` - Test file suffix (default: "spec")
+- `--debug` - Include HTML template as comments in generated page objects (for debugging)
 
 ## Target Audience
 

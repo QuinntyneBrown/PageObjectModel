@@ -67,9 +67,10 @@
     - tests/{component-name}.{test-suffix}.ts - Test specification file
 
 12. The page object files shall include
-    - Import statements for Playwright Locator and expect
+    - Import statements for Playwright Page, Locator and expect
     - Import of BasePage from ./base.page
     - Class extending BasePage
+    - Constructor with page parameter typed as Page (not inline import)
     - Constructor calling super(page)
     - Implementation of abstract navigate() method
     - Implementation of abstract waitForLoad() method
@@ -90,10 +91,10 @@
     - Placeholder for additional test cases
 
 15. The fixtures/fixtures.ts file shall include
-    - Extended Playwright test with custom fixtures
+    - Extended Playwright test with page object fixtures (no explicit Fixtures type)
     - Page object imports from ../page-objects/
     - Page object instances for each component
-    - Proper TypeScript typing
+    - TypeScript type inference (no custom type declarations)
 
 16. The helpers.ts file shall include
     - Common utility functions for tests
@@ -119,9 +120,34 @@
 
 19. The urls.config.ts file shall include
     - Base URL with environment variable support
-    - Application route constants
+    - URL entries for each routable page component (URLS object)
     - API endpoint patterns using glob syntax for route mocking
     - SignalR hub endpoint patterns
+
+19a. A component is considered routable (a page) if any of these conditions are met:
+    - The file path contains /pages/ or /page/ directory
+    - The file path contains /features/ directory
+    - The file path contains /views/ or /screens/ directory
+    - The component class name ends with "Page" or "PageComponent"
+
+19b. A component is NOT routable if the class name contains any of these patterns:
+    - dialog, modal, button, link, nav, avatar, toolbar, tab
+    - header, footer, sidebar, sidenav, menu, dropdown, tooltip
+    - spinner, loader, icon, badge, chip, card, list, item
+    - form-field, input, select, checkbox, radio, toggle, switch
+    - snackbar, toast, alert, banner, notification, popover
+    - breadcrumb, pagination, stepper, progress, skeleton
+    - divider, spacer, container, wrapper, layout, grid
+    - table, row, cell, column, panel, accordion, expansion
+    - fab, action, search, filter, sort
+
+19c. Routable page object models shall:
+    - Import URLS from ../configs/urls.config
+    - Use URLS.{componentName} in the navigate() method instead of hardcoded paths
+
+19d. Non-routable page object models shall:
+    - NOT import URLS config
+    - Throw an error in the navigate() method with message: "{ClassName} is not a routable component. Use it as a child component within a page."
 
 20. The SignalR mock fixture shall provide
     - RxJS-based observable streams (not promises)
@@ -235,3 +261,41 @@
     - getTextContent(selector) method for text extraction
     - getCount(selector) method for element counting
     - Import of TIMEOUTS from ../configs/timeout.config
+
+35. The selector parser shall detect and create selectors for text elements
+    - h1, h2, h3, h4, h5, h6 (headings)
+    - p (paragraphs)
+    - span (inline text)
+    - label (form labels)
+    - strong, em, b, i (emphasis)
+    - small, mark, sub, sup (text formatting)
+    - blockquote, cite, q (quotations)
+    - code, pre (code blocks)
+    - abbr, address, time (semantic text)
+
+36. The page object generator shall create text validation methods for text elements
+    - expect{Element}Visible() - Asserts the text element is visible
+    - expect{Element}HasText(expected: string) - Asserts the element has exact text
+    - expect{Element}ContainsText(expected: string) - Asserts the element contains text
+    - get{Element}Text() - Returns the text content of the element
+
+37. The selector parser shall detect elements with dynamic content
+    - Elements with Angular interpolation (e.g., `<h1>{{ title }}</h1>`, `<div>{{ content }}</div>`)
+    - Elements with ng-content projection (e.g., `<div><ng-content></ng-content></div>`)
+    - This applies to ANY HTML tag, not just specific text elements
+    - ng-content variations: `<ng-content></ng-content>`, `<ng-content/>`, `<ng-content select="..."></ng-content>`
+    - The selector shall use the element tag type
+    - Property names shall be derived from the tag type (e.g., `h1` -> `Heading1`, `div` -> `Container`)
+
+38. For elements with dynamic content (interpolation or ng-content), the page object shall include
+    - A tag-based selector for the containing element
+    - expect{Element}Visible() method for visibility verification
+    - expect{Element}HasText(expected: string) method for text assertion
+    - expect{Element}ContainsText(expected: string) method for partial text assertion
+    - get{Element}Text() method to retrieve the text content
+
+39. The CLI tool shall support a --debug global option
+    - When enabled, the HTML template content is included as a multi-line comment at the top of generated page object files
+    - The comment format is: /* DEBUG: HTML Template Content ... */
+    - This helps developers understand what template was parsed and debug selector generation
+    - The option applies to all generation commands (app, workspace, lib, artifacts)

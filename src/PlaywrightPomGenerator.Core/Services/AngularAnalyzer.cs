@@ -356,6 +356,7 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
                         component = component with
                         {
                             TemplatePath = templatePath,
+                            TemplateContent = templateContent,
                             Selectors = selectors
                         };
                     }
@@ -401,14 +402,86 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
             .Select(m => m.Groups[1].Value)
             .ToList();
 
+        // Determine if component is routable
+        var isRoutable = IsRoutableComponent(filePath, className);
+
         return new AngularComponentInfo
         {
             Name = className,
             Selector = selector,
             FilePath = filePath,
             Inputs = inputs,
-            Outputs = outputs
+            Outputs = outputs,
+            IsRoutable = isRoutable
         };
+    }
+
+    /// <summary>
+    /// Determines if a component is a routable page based on file path and class name conventions.
+    /// </summary>
+    private static bool IsRoutableComponent(string filePath, string className)
+    {
+        // Normalize path separators for cross-platform comparison
+        var normalizedPath = filePath.Replace('\\', '/').ToLowerInvariant();
+
+        // Non-routable component types (dialogs, modals, buttons, links, navs, avatars, toolbars, tabs, etc.)
+        var nonRoutablePatterns = new[]
+        {
+            "dialog", "modal", "button", "link", "nav", "avatar", "toolbar", "tab",
+            "header", "footer", "sidebar", "sidenav", "menu", "dropdown", "tooltip",
+            "spinner", "loader", "icon", "badge", "chip", "card", "list", "item",
+            "form-field", "input", "select", "checkbox", "radio", "toggle", "switch",
+            "snackbar", "toast", "alert", "banner", "notification", "popover",
+            "breadcrumb", "pagination", "stepper", "progress", "skeleton",
+            "divider", "spacer", "container", "wrapper", "layout", "grid",
+            "table", "row", "cell", "column", "panel", "accordion", "expansion",
+            "fab", "action", "search", "filter", "sort"
+        };
+
+        var lowerClassName = className.ToLowerInvariant();
+
+        // Check if the class name contains any non-routable patterns
+        foreach (var pattern in nonRoutablePatterns)
+        {
+            if (lowerClassName.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        // Routable if:
+        // 1. File path contains /pages/ or /page/ directory
+        if (normalizedPath.Contains("/pages/") || normalizedPath.Contains("/page/"))
+        {
+            return true;
+        }
+
+        // 2. File path contains /features/ directory (components directly under features are often pages)
+        if (normalizedPath.Contains("/features/"))
+        {
+            return true;
+        }
+
+        // 3. Class name ends with "Page" (convention for routable pages)
+        if (className.EndsWith("Page", StringComparison.Ordinal) ||
+            className.EndsWith("PageComponent", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // 4. File path contains /views/ directory (another common convention)
+        if (normalizedPath.Contains("/views/"))
+        {
+            return true;
+        }
+
+        // 5. File path contains /screens/ directory (mobile/desktop app convention)
+        if (normalizedPath.Contains("/screens/"))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private string? GetTemplatePath(string componentPath, string content)
@@ -840,7 +913,132 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
             });
         }
 
+        // Parse text elements (h1-h6, p, span, label, strong, em, etc.)
+        foreach (Match match in TextElementRegex().Matches(templateContent))
+        {
+            var tagName = match.Groups[1].Value.ToLowerInvariant();
+            var textContent = match.Groups[2].Value.Trim();
+
+            // Skip elements with Angular interpolation or empty text
+            if (string.IsNullOrWhiteSpace(textContent) || textContent.Contains("{{"))
+            {
+                continue;
+            }
+
+            // Create a meaningful property name based on the element type and text
+            var suffix = GetTextElementSuffix(tagName);
+            var propertyName = ToPascalCase(textContent) + suffix;
+
+            // Make name unique if duplicate
+            var baseName = propertyName;
+            var counter = 1;
+            while (selectors.Any(s => s.PropertyName == propertyName))
+            {
+                propertyName = $"{baseName}{counter++}";
+            }
+
+            selectors.Add(new ElementSelector
+            {
+                ElementType = tagName,
+                Strategy = SelectorStrategy.Text,
+                SelectorValue = $"{tagName}:has-text(\"{textContent}\")",
+                PropertyName = propertyName,
+                TextContent = textContent,
+                IsTextElement = true
+            });
+        }
+
+        // Parse elements with Angular interpolation (e.g., <div>{{ content }}</div>)
+        // This handles ANY tag that contains {{ }} interpolation
+        foreach (Match match in ElementWithInterpolationRegex().Matches(templateContent))
+        {
+            var tagName = match.Groups[1].Value.ToLowerInvariant();
+
+            // Derive property name from the tag type
+            var propertyName = GetDynamicContentPropertyName(tagName);
+
+            // Make name unique if duplicate
+            var baseName = propertyName;
+            var counter = 1;
+            while (selectors.Any(s => s.PropertyName == propertyName))
+            {
+                propertyName = $"{baseName}{counter++}";
+            }
+
+            selectors.Add(new ElementSelector
+            {
+                ElementType = tagName,
+                Strategy = SelectorStrategy.Css,
+                SelectorValue = tagName,
+                PropertyName = propertyName,
+                TextContent = null, // Dynamic content
+                IsTextElement = true
+            });
+        }
+
+        // Parse elements with ng-content projection (e.g., <div><ng-content></ng-content></div>)
+        // This handles ANY tag that contains <ng-content>, <ng-content/>, or <ng-content ...></ng-content>
+        foreach (Match match in ElementWithNgContentRegex().Matches(templateContent))
+        {
+            var tagName = match.Groups[1].Value.ToLowerInvariant();
+
+            // Skip if we already have a selector for this tag type from interpolation detection
+            // (to avoid duplicates when an element has both ng-content and interpolation)
+            var propertyName = GetDynamicContentPropertyName(tagName);
+
+            // Make name unique if duplicate
+            var baseName = propertyName;
+            var counter = 1;
+            while (selectors.Any(s => s.PropertyName == propertyName))
+            {
+                propertyName = $"{baseName}{counter++}";
+            }
+
+            selectors.Add(new ElementSelector
+            {
+                ElementType = tagName,
+                Strategy = SelectorStrategy.Css,
+                SelectorValue = tagName,
+                PropertyName = propertyName,
+                TextContent = null, // Dynamic/projected content
+                IsTextElement = true
+            });
+        }
+
         return selectors;
+    }
+
+    /// <summary>
+    /// Gets the property name for an element with dynamic content based on its tag type.
+    /// </summary>
+    private static string GetDynamicContentPropertyName(string tagName)
+    {
+        return tagName.ToLowerInvariant() switch
+        {
+            "h1" => "Heading1",
+            "h2" => "Heading2",
+            "h3" => "Heading3",
+            "h4" => "Heading4",
+            "h5" => "Heading5",
+            "h6" => "Heading6",
+            "p" => "Paragraph",
+            "div" => "Container",
+            "span" => "TextSpan",
+            "section" => "Section",
+            "article" => "Article",
+            "aside" => "Aside",
+            "header" => "Header",
+            "footer" => "Footer",
+            "main" => "Main",
+            "nav" => "Nav",
+            "li" => "ListItem",
+            "td" => "TableCell",
+            "th" => "TableHeader",
+            "figcaption" => "Caption",
+            "blockquote" => "Quote",
+            "label" => "Label",
+            _ => ToPascalCase(tagName) + "Element"
+        };
     }
 
     private static string? ExtractTextContent(string content, int position)
@@ -891,6 +1089,36 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
             "table" or "mat-table" => "Table",
             _ when elementType.StartsWith("mat-", StringComparison.OrdinalIgnoreCase) => "Element",
             _ => "Element"
+        };
+    }
+
+    private static string GetTextElementSuffix(string tagName)
+    {
+        return tagName.ToLowerInvariant() switch
+        {
+            "h1" => "Heading",
+            "h2" => "Heading",
+            "h3" => "Heading",
+            "h4" => "Heading",
+            "h5" => "Heading",
+            "h6" => "Heading",
+            "p" => "Text",
+            "span" => "Text",
+            "label" => "Label",
+            "strong" or "b" => "Text",
+            "em" or "i" => "Text",
+            "small" => "Text",
+            "blockquote" => "Quote",
+            "cite" => "Citation",
+            "q" => "Quote",
+            "code" => "Code",
+            "pre" => "Code",
+            "abbr" => "Abbreviation",
+            "address" => "Address",
+            "time" => "Time",
+            "mark" => "Text",
+            "sub" or "sup" => "Text",
+            _ => "Text"
         };
     }
 
@@ -1083,4 +1311,13 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
 
     [GeneratedRegex(@"<input[^>]*type\s*=\s*['""]([^'""]+)['""][^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex InputWithTypeRegex();
+
+    [GeneratedRegex(@"<(h[1-6]|p|span|label|strong|em|small|mark|sub|sup|blockquote|cite|q|code|pre|abbr|address|time)[^>]*>([^<]+)</\1>", RegexOptions.IgnoreCase)]
+    private static partial Regex TextElementRegex();
+
+    [GeneratedRegex(@"<(\w+)[^>]*>\s*\{\{[^}]+\}\}\s*</\1>", RegexOptions.IgnoreCase)]
+    private static partial Regex ElementWithInterpolationRegex();
+
+    [GeneratedRegex(@"<(\w+)[^>]*>\s*<ng-content[^>]*/?\s*>(?:</ng-content>)?\s*</\1>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex ElementWithNgContentRegex();
 }

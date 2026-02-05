@@ -135,6 +135,9 @@ ppg signalr-mock ./e2e/mocks
 
 # Custom test file suffix (default: "spec")
 --test-suffix "test"  # Creates *.test.ts instead of *.spec.ts
+
+# Enable debug mode (includes HTML template as comments in page objects)
+--debug
 ```
 
 ## Generated Output
@@ -362,6 +365,29 @@ The tool automatically detects and creates selectors for:
 - Tables (`<table>`, `mat-table`)
 - Input elements with `type` attribute
 - Custom elements with text content
+- **Elements with Angular interpolation** (`{{ property }}`)
+- **Elements with ng-content projection** (`<ng-content></ng-content>`)
+
+### Dynamic Content Detection
+
+The generator detects elements that will render dynamic content:
+
+```html
+<!-- Angular interpolation - detected -->
+<h1>{{ title }}</h1>
+<p>{{ description }}</p>
+<div>{{ content }}</div>
+
+<!-- ng-content projection - detected -->
+<div><ng-content></ng-content></div>
+<span><ng-content select="[header]"></ng-content></span>
+```
+
+For these elements, the generated page object includes:
+- `expect{Element}Visible()` - Visibility assertion
+- `expect{Element}HasText(expected)` - Exact text assertion
+- `expect{Element}ContainsText(expected)` - Partial text assertion
+- `get{Element}Text()` - Text content retrieval
 
 ## Requirements
 

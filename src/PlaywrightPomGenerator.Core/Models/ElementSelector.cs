@@ -59,6 +59,11 @@ public sealed record ElementSelector
     /// Gets the click handler method name if available.
     /// </summary>
     public string? ClickHandlerName { get; init; }
+
+    /// <summary>
+    /// Gets whether the element is a text element (h1-h6, p, span, etc.).
+    /// </summary>
+    public bool IsTextElement { get; init; }
 }
 
 /// <summary>
