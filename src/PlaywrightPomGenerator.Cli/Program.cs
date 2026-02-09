@@ -149,13 +149,23 @@ public static class Program
             context.ExitCode = await handler.ExecuteAsync(output, context.GetCancellationToken()).ConfigureAwait(false);
         });
 
+        var remoteCommand = new GenerateRemoteCommand();
+        remoteCommand.SetHandler(async (context) =>
+        {
+            var url = context.ParseResult.GetValueForArgument(remoteCommand.UrlArgument);
+            var output = context.ParseResult.GetValueForOption(remoteCommand.OutputOption);
+            var handler = services.GetRequiredService<GenerateRemoteCommandHandler>();
+            context.ExitCode = await handler.ExecuteAsync(url, output, context.GetCancellationToken()).ConfigureAwait(false);
+        });
+
         var rootCommand = new RootCommand("Playwright Page Object Model Generator for Angular applications and libraries")
         {
             appCommand,
             workspaceCommand,
             libraryCommand,
             artifactsCommand,
-            signalRMockCommand
+            signalRMockCommand,
+            remoteCommand
         };
 
         // Add global options for header, test suffix, and debug mode
@@ -209,6 +219,7 @@ public static class Program
         services.AddSingleton<IAngularAnalyzer, AngularAnalyzer>();
         services.AddSingleton<ITemplateEngine, TemplateEngine>();
         services.AddSingleton<ICodeGenerator, CodeGenerator>();
+        services.AddSingleton<IGitService, GitService>();
 
         // Command handlers
         services.AddTransient<GenerateAppCommandHandler>();
@@ -216,5 +227,6 @@ public static class Program
         services.AddTransient<GenerateLibraryCommandHandler>();
         services.AddTransient<GenerateArtifactsCommandHandler>();
         services.AddTransient<GenerateSignalRMockCommandHandler>();
+        services.AddTransient<GenerateRemoteCommandHandler>();
     }
 }

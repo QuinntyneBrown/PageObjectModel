@@ -57,4 +57,18 @@ public interface IAngularAnalyzer
     Task<AngularProjectInfo> AnalyzeLibraryAsync(
         string libraryPath,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Analyzes Angular components at an arbitrary path (file or directory) without
+    /// requiring angular.json or package.json. Useful for analyzing remote repositories
+    /// where the URL points to a specific component file or folder.
+    /// </summary>
+    /// <param name="targetPath">The path to the file or directory to analyze.</param>
+    /// <param name="projectName">The name to use for the generated project.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Information about the discovered components.</returns>
+    Task<AngularProjectInfo> AnalyzeComponentsAtPathAsync(
+        string targetPath,
+        string projectName,
+        CancellationToken cancellationToken = default);
 }

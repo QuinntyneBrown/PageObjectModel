@@ -279,6 +279,94 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
         };
     }
 
+    /// <inheritdoc />
+    public async Task<AngularProjectInfo> AnalyzeComponentsAtPathAsync(
+        string targetPath,
+        string projectName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(targetPath);
+        ArgumentNullException.ThrowIfNull(projectName);
+
+        var fullPath = _fileSystem.GetFullPath(targetPath);
+        _logger.LogInformation("Analyzing components at path {Path}", fullPath);
+
+        List<AngularComponentInfo> components;
+        string sourcePath;
+
+        if (_fileSystem.FileExists(fullPath))
+        {
+            // Single file - analyze just this file
+            sourcePath = _fileSystem.GetDirectoryName(fullPath) ?? fullPath;
+            components = [];
+
+            try
+            {
+                var content = await _fileSystem.ReadAllTextAsync(fullPath, cancellationToken)
+                    .ConfigureAwait(false);
+
+                var component = ParseComponent(fullPath, content);
+                if (component is not null)
+                {
+                    var templatePath = GetTemplatePath(fullPath, content);
+                    string? templateContent = null;
+
+                    if (templatePath is not null && _fileSystem.FileExists(templatePath))
+                    {
+                        templateContent = await _fileSystem.ReadAllTextAsync(templatePath, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        templateContent = ExtractInlineTemplate(content);
+                    }
+
+                    if (!string.IsNullOrEmpty(templateContent))
+                    {
+                        var selectors = ParseTemplateSelectors(templateContent);
+                        component = component with
+                        {
+                            TemplatePath = templatePath,
+                            TemplateContent = templateContent,
+                            Selectors = selectors
+                        };
+                    }
+
+                    components.Add(component);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to analyze component at {Path}", fullPath);
+            }
+        }
+        else if (_fileSystem.DirectoryExists(fullPath))
+        {
+            // Directory - scan recursively for components
+            sourcePath = fullPath;
+            components = await AnalyzeComponentsAsync(fullPath, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            throw new InvalidOperationException($"Path does not exist: {fullPath}");
+        }
+
+        var routes = _fileSystem.DirectoryExists(sourcePath)
+            ? await AnalyzeRoutesAsync(sourcePath, cancellationToken).ConfigureAwait(false)
+            : [];
+
+        return new AngularProjectInfo
+        {
+            Name = projectName,
+            RootPath = sourcePath,
+            SourceRoot = sourcePath,
+            ProjectType = AngularProjectType.Application,
+            Components = components,
+            Routes = routes
+        };
+    }
+
     private static AngularProjectType GetProjectType(JsonElement projectElement)
     {
         if (projectElement.TryGetProperty("projectType", out var typeProp))

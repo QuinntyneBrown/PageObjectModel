@@ -18,6 +18,7 @@ A powerful .NET CLI tool that automatically generates Playwright Page Object Mod
 - **Test Scaffolding** - Generates complete Playwright test specs with fixture integration
 - **SignalR Mock Support** - Generates RxJS-based SignalR mock fixtures for real-time application testing
 - **Workspace Support** - Handle complex Angular workspaces with multiple applications and libraries
+- **Remote Repository Support** - Generate tests directly from a git URL (GitHub, GitLab, Bitbucket, Azure DevOps, or any git host) without manually cloning
 - **Highly Configurable** - Customize output via configuration files, environment variables, or command-line options
 
 ## Installation
