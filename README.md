@@ -50,6 +50,9 @@ ppg workspace . -o ./e2e-tests
 
 # For an Angular library
 ppg lib ./projects/my-lib -o ./e2e
+
+# From a remote git URL (GitHub, GitLab, Bitbucket, Azure DevOps, etc.)
+ppg remote https://github.com/owner/repo/blob/main/src/app/my-component/my-component.ts
 ```
 
 ### 2. Install Playwright and Run Tests
@@ -117,6 +120,55 @@ ppg artifacts . --page-objects --selectors
 - `--page-objects` - Generate page object files
 - `--helpers` - Generate helper utilities
 - `-a, --all` - Generate all artifacts
+
+### `remote` - Generate from Remote Git URL
+
+Generate tests directly from a remote git repository URL. The tool clones the repository to a temporary directory, analyzes the Angular components at the specified path, generates tests, and cleans up automatically. Requires `git` to be installed and available on the system PATH.
+
+```bash
+ppg remote <url> [options]
+
+# Examples
+
+# GitHub - component file
+ppg remote https://github.com/owner/repo/blob/main/src/app/my-component/my-component.ts
+
+# GitHub - component folder
+ppg remote https://github.com/owner/repo/tree/main/src/app/components -o ./e2e
+
+# GitLab (including self-hosted)
+ppg remote https://gitlab.com/owner/repo/-/blob/develop/src/app/table/table.ts
+ppg remote https://gitscm.company.com/team/repo/-/blob/main/src/components/form
+
+# Bitbucket
+ppg remote https://bitbucket.org/owner/repo/src/main/src/app/dashboard
+
+# Azure DevOps
+ppg remote "https://dev.azure.com/org/project/_git/repo?path=/src/app/login&version=GBmain"
+
+# Commit hash instead of branch
+ppg remote https://github.com/owner/repo/blob/a1b2c3d4e5f6/src/app/my-component
+```
+
+**Options:**
+- `-o, --output <dir>` - Output directory (defaults to `./e2e` in the current working directory)
+
+**Supported URL formats:**
+| Provider | URL Pattern |
+|---|---|
+| GitHub | `https://github.com/{owner}/{repo}/blob/{ref}/{path}` |
+| GitLab | `https://gitlab.com/{owner}/{repo}/-/blob/{ref}/{path}` |
+| Self-hosted GitLab | `https://gitscm.example.com/{owner}/{repo}/-/blob/{ref}/{path}` |
+| Bitbucket | `https://bitbucket.org/{owner}/{repo}/src/{ref}/{path}` |
+| Azure DevOps | `https://dev.azure.com/{org}/{project}/_git/{repo}?path={path}&version=GB{branch}` |
+| Generic | `https://git.example.com/{owner}/{repo}.git` |
+
+**Notes:**
+- The ref can be a branch name (e.g., `main`, `develop`) or a commit hash
+- When pointing to a file, tests are generated for that single component
+- When pointing to a folder, all components in that folder (and subfolders) are scanned
+- The tool automatically detects Angular workspaces, applications, and libraries within the cloned repo
+- No third-party git libraries are used; only the `git` CLI
 
 ### `signalr-mock` - Generate SignalR Mock
 
@@ -395,6 +447,7 @@ For these elements, the generated page object includes:
 ### Runtime
 - .NET 8.0 SDK or later
 - Angular application, library, or workspace
+- `git` CLI (required for `ppg remote` command)
 
 ### For Generated Tests
 - Node.js 16+ and npm
