@@ -27,7 +27,7 @@ public sealed class GeneratorOptions
     /// <summary>
     /// Gets or sets the tool version string used in generated file headers.
     /// </summary>
-    public string ToolVersion { get; set; } = "1.4.0";
+    public string ToolVersion { get; set; } = "1.5.0";
 
     /// <summary>
     /// Gets or sets the output directory name for generated test files.

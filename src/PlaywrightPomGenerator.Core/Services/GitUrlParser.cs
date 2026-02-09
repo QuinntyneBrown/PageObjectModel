@@ -171,10 +171,10 @@ public static partial class GitUrlParser
 
         if (dashIndex >= 2)
         {
-            // Everything before "-" is owner/repo (possibly nested groups)
-            owner = string.Join("/", segments[..^(segments.Length - dashIndex + 1)].Length > 0
-                ? segments[..(dashIndex - 1)]
-                : segments[..1]);
+            // The segment immediately before "-" is the repo name.
+            // Everything before that is the owner (supports nested groups/subgroups).
+            // e.g. /group/subgroup/repo/-/blob/... → owner="group/subgroup", repo="repo"
+            owner = string.Join("/", segments[..(dashIndex - 1)]);
             repo = segments[dashIndex - 1].TrimSuffix(".git");
 
             // After "-" comes blob/tree/{ref}/{path}
@@ -191,8 +191,9 @@ public static partial class GitUrlParser
         }
         else
         {
-            // No "-" separator, simple owner/repo format
-            owner = segments[0];
+            // No "-" separator: last segment is the repo, everything before is the owner/group path.
+            // e.g. /group/subgroup/repo → owner="group/subgroup", repo="repo"
+            owner = string.Join("/", segments[..^1]);
             repo = segments[^1].TrimSuffix(".git");
         }
 

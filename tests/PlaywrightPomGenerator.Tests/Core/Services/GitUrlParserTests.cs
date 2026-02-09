@@ -428,4 +428,136 @@ public sealed class GitUrlParserTests
         result.Branch.Should().Be("master");
         result.Commit.Should().BeNull();
     }
+
+    // =====================================================================================
+    // GitLab nested groups / multiple owners
+    // =====================================================================================
+
+    [Fact]
+    public void Parse_GitLabNestedGroup_WithDashBlob_ShouldExtractFullOwnerPath()
+    {
+        // https://gitlab.com/group/subgroup/repo/-/blob/main/src/file.ts
+        var result = GitUrlParser.Parse(
+            "https://gitlab.com/group/subgroup/repo/-/blob/main/src/file.ts");
+
+        result.Provider.Should().Be(GitProvider.GitLab);
+        result.Owner.Should().Be("group/subgroup");
+        result.RepoName.Should().Be("repo");
+        result.CloneUrl.Should().Be("https://gitlab.com/group/subgroup/repo.git");
+        result.Branch.Should().Be("main");
+        result.PathInRepo.Should().Be("src/file.ts");
+        result.IsFilePath.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Parse_GitLabDeeplyNestedGroup_WithDashBlob_ShouldExtractFullOwnerPath()
+    {
+        // https://gitlab.com/org/team/project/repo/-/blob/develop/src/app/component.ts
+        var result = GitUrlParser.Parse(
+            "https://gitlab.com/org/team/project/repo/-/blob/develop/src/app/component.ts");
+
+        result.Provider.Should().Be(GitProvider.GitLab);
+        result.Owner.Should().Be("org/team/project");
+        result.RepoName.Should().Be("repo");
+        result.CloneUrl.Should().Be("https://gitlab.com/org/team/project/repo.git");
+        result.Branch.Should().Be("develop");
+        result.PathInRepo.Should().Be("src/app/component.ts");
+    }
+
+    [Fact]
+    public void Parse_GitLabNestedGroup_WithDashTree_ShouldExtractFullOwnerPath()
+    {
+        // https://gitlab.com/group/subgroup/repo/-/tree/main/src/components
+        var result = GitUrlParser.Parse(
+            "https://gitlab.com/group/subgroup/repo/-/tree/main/src/components");
+
+        result.Provider.Should().Be(GitProvider.GitLab);
+        result.Owner.Should().Be("group/subgroup");
+        result.RepoName.Should().Be("repo");
+        result.Branch.Should().Be("main");
+        result.PathInRepo.Should().Be("src/components");
+        result.IsFilePath.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Parse_GitLabNestedGroup_SimpleUrlNoDash_ShouldExtractFullOwnerPath()
+    {
+        // https://gitlab.com/group/subgroup/repo (no /-/ path)
+        var result = GitUrlParser.Parse(
+            "https://gitlab.com/group/subgroup/repo");
+
+        result.Provider.Should().Be(GitProvider.GitLab);
+        result.Owner.Should().Be("group/subgroup");
+        result.RepoName.Should().Be("repo");
+        result.CloneUrl.Should().Be("https://gitlab.com/group/subgroup/repo.git");
+        result.Branch.Should().BeNull();
+        result.PathInRepo.Should().BeNull();
+    }
+
+    [Fact]
+    public void Parse_GitLabDeeplyNestedGroup_SimpleUrlNoDash_ShouldExtractFullOwnerPath()
+    {
+        // https://gitlab.com/org/team/project/repo
+        var result = GitUrlParser.Parse(
+            "https://gitlab.com/org/team/project/repo");
+
+        result.Provider.Should().Be(GitProvider.GitLab);
+        result.Owner.Should().Be("org/team/project");
+        result.RepoName.Should().Be("repo");
+        result.CloneUrl.Should().Be("https://gitlab.com/org/team/project/repo.git");
+    }
+
+    [Fact]
+    public void Parse_GitLabNestedGroup_SimpleUrlWithGitSuffix_ShouldTrimAndExtract()
+    {
+        // https://gitlab.com/group/subgroup/repo.git
+        var result = GitUrlParser.Parse(
+            "https://gitlab.com/group/subgroup/repo.git");
+
+        result.Provider.Should().Be(GitProvider.GitLab);
+        result.Owner.Should().Be("group/subgroup");
+        result.RepoName.Should().Be("repo");
+        result.CloneUrl.Should().Be("https://gitlab.com/group/subgroup/repo.git");
+    }
+
+    [Fact]
+    public void Parse_SelfHostedGitLabNestedGroup_ShouldExtractFullOwnerPath()
+    {
+        // Self-hosted GitLab with nested groups detected by /-/blob/ pattern
+        var result = GitUrlParser.Parse(
+            "https://gitscm.nike.com/platform/frontend/shared-resources/-/blob/develop/src/components/table.ts");
+
+        result.Provider.Should().Be(GitProvider.GitLab);
+        result.Owner.Should().Be("platform/frontend");
+        result.RepoName.Should().Be("shared-resources");
+        result.CloneUrl.Should().Be("https://gitscm.nike.com/platform/frontend/shared-resources.git");
+        result.Branch.Should().Be("develop");
+        result.PathInRepo.Should().Be("src/components/table.ts");
+    }
+
+    [Fact]
+    public void Parse_GitLabNestedGroup_WithCommitHash_ShouldExtractOwnerAndCommit()
+    {
+        var result = GitUrlParser.Parse(
+            "https://gitlab.com/group/subgroup/repo/-/blob/abc123def456789012345678901234567890abcd/src/file.ts");
+
+        result.Owner.Should().Be("group/subgroup");
+        result.RepoName.Should().Be("repo");
+        result.Commit.Should().Be("abc123def456789012345678901234567890abcd");
+        result.Branch.Should().BeNull();
+        result.PathInRepo.Should().Be("src/file.ts");
+    }
+
+    [Fact]
+    public void Parse_GitLabSingleOwner_ShouldStillWork()
+    {
+        // Ensure the simple single-owner case still works after nested group changes
+        var result = GitUrlParser.Parse(
+            "https://gitlab.com/mygroup/myrepo/-/blob/main/src/file.ts");
+
+        result.Owner.Should().Be("mygroup");
+        result.RepoName.Should().Be("myrepo");
+        result.CloneUrl.Should().Be("https://gitlab.com/mygroup/myrepo.git");
+        result.Branch.Should().Be("main");
+    }
 }
