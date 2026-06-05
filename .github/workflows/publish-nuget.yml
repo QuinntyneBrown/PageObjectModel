@@ -1,0 +1,62 @@
+name: Publish to NuGet
+
+# Builds, tests, packs, and publishes the PlaywrightPomGenerator tool to NuGet on every
+# push to main. Commits that do not bump <Version> are a no-op at the push step thanks to
+# --skip-duplicate, so this is safe to run on every commit.
+
+on:
+  push:
+    branches: [main]
+
+# Least privilege: this job only needs to read the repo; the NuGet credential is a secret.
+permissions:
+  contents: read
+
+# Never run two publishes at once (e.g. two quick commits); don't cancel an in-flight push.
+concurrency:
+  group: publish-nuget
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The 'bridge' command and its tests use the Node TypeScript AST sidecar.
+      - name: Install sidecar dependencies
+        working-directory: src/PlaywrightPomGenerator.Sidecar.Node
+        run: npm ci
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      - name: Pack
+        run: dotnet pack src/PlaywrightPomGenerator.Cli/PlaywrightPomGenerator.Cli.csproj --configuration Release --no-build --output ${{ runner.temp }}/nupkg
+
+      - name: Push to NuGet
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: >-
+          dotnet nuget push "${{ runner.temp }}/nupkg/*.nupkg"
+          --api-key "$NUGET_API_KEY"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
