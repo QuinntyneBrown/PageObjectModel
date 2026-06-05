@@ -52,11 +52,22 @@ jobs:
       - name: Pack
         run: dotnet pack src/PlaywrightPomGenerator.Cli/PlaywrightPomGenerator.Cli.csproj --configuration Release --no-build --output ${{ runner.temp }}/nupkg
 
-      - name: Push to NuGet
+      # Pushing the .nupkg auto-publishes the adjacent .snupkg symbols; the explicit symbols
+      # push below is a belt-and-suspenders no-op (--skip-duplicate) in case it does not.
+      - name: Push package to NuGet
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: >-
           dotnet nuget push "${{ runner.temp }}/nupkg/*.nupkg"
+          --api-key "$NUGET_API_KEY"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Push symbols to NuGet
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: >-
+          dotnet nuget push "${{ runner.temp }}/nupkg/*.snupkg"
           --api-key "$NUGET_API_KEY"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate

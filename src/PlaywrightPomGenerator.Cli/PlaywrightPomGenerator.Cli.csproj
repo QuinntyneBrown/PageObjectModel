@@ -48,10 +48,19 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Condition="Exists('..\..\README.md')" />
   </ItemGroup>
 
-  <!-- Ship the Node TypeScript AST sidecar (used by the 'bridge' command) alongside the tool. -->
+  <!-- Ship the Node TypeScript AST sidecar (used by the 'bridge' command) alongside the tool.
+       CopyToOutputDirectory + Link place it under sidecar/ next to the binaries; because this is a
+       .NET tool (PackAsTool), the output directory is packed into tools/<tfm>/any/, so the sidecar
+       ships automatically — no explicit Pack/PackagePath (which produced a malformed duplicate). -->
   <ItemGroup>
-    <None Include="..\PlaywrightPomGenerator.Sidecar.Node\sidecar.js" Link="sidecar\sidecar.js" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="tools\net8.0\any\sidecar\" />
-    <None Include="..\PlaywrightPomGenerator.Sidecar.Node\package.json" Link="sidecar\package.json" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="tools\net8.0\any\sidecar\" />
+    <None Include="..\PlaywrightPomGenerator.Sidecar.Node\sidecar.js">
+      <Link>sidecar/sidecar.js</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\PlaywrightPomGenerator.Sidecar.Node\package.json">
+      <Link>sidecar/package.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
