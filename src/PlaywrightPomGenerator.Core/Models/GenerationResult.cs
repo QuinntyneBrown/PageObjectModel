@@ -131,5 +131,10 @@ public enum GeneratedFileType
     /// <summary>
     /// Component object file (root-Locator-scoped, for composition inside pages).
     /// </summary>
-    ComponentObject
+    ComponentObject,
+
+    /// <summary>
+    /// Playwright bridge file (service-interface mocks, registry, providers, or client).
+    /// </summary>
+    Bridge
 }

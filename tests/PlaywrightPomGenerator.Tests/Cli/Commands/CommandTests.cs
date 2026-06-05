@@ -133,6 +133,31 @@ public sealed class CommandTests
     }
 
     [Fact]
+    public void GenerateBridgeCommand_ShouldHaveCorrectNameAndDescription()
+    {
+        // Act
+        var command = new GenerateBridgeCommand();
+
+        // Assert
+        command.Name.Should().Be("bridge");
+        command.Description.Should().Contain("InjectionToken");
+        command.Description.Should().Contain("Playwright bridge");
+    }
+
+    [Fact]
+    public void GenerateBridgeCommand_ShouldHaveRequiredArgumentsAndOptions()
+    {
+        // Act
+        var command = new GenerateBridgeCommand();
+
+        // Assert
+        command.PathArgument.Should().NotBeNull();
+        command.PathArgument.Name.Should().Be("path");
+        command.OutputOption.Should().NotBeNull();
+        command.OutputOption.Name.Should().Be("output");
+    }
+
+    [Fact]
     public void GenerateSignalRMockCommand_ShouldHaveCorrectNameAndDescription()
     {
         // Act

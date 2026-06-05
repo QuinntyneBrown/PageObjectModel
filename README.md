@@ -12,6 +12,7 @@ A powerful .NET CLI tool that automatically generates Playwright Page Object Mod
 - **BasePage Pattern** - All generated page objects extend from a common BasePage class with shared functionality
 - **Page Object Generation** - Creates type-safe TypeScript page objects with properly typed locators and methods
 - **Component Object Generation** - Creates root-`Locator`-scoped component objects (`ppg component`) for non-routable components, so dashboard-style apps can be verified component-by-component and composed inside pages
+- **Service Bridge Generation** - Creates window-exposed recording mocks of `InjectionToken`-backed service interfaces (`ppg bridge`), so E2E tests can verify service calls, stub return values, and push observable values to drive the UI (uses a TypeScript-compiler sidecar for accurate type analysis)
 - **Inline Template Support** - Parses both external HTML templates and inline templates in component files
 - **Angular Material Support** - Detects and creates selectors for mat-button, mat-table, mat-form-field, and other Material components
 - **Click Handler Detection** - Automatically generates click methods for elements with `(click)` event bindings
@@ -126,6 +127,29 @@ ppg component ./src/app --exclude-routable
 
 The path may be an application, a library, or an arbitrary component/feature folder. See
 [Generated Component Objects](#generated-component-objects) for the output shape.
+
+### `bridge` - Generate a Playwright Service Bridge
+
+Generates a **bridge** that exposes recording mocks of your `InjectionToken`-backed service
+interfaces on `window.__e2eBridge`. Playwright tests can then **verify that a service was called**,
+**stub return values** to drive the UI from fake data, and **push observable values** to trigger
+service-level behaviour — all without touching the real service implementations.
+
+```bash
+ppg bridge <path> [options]
+
+# Examples
+ppg bridge ./my-workspace
+ppg bridge ./src/app -o ./e2e
+```
+
+**Options:**
+- `-o, --output` - Output directory for generated files
+
+> **Requires Node.js.** The `bridge` command shells out to a TypeScript-compiler "sidecar" to parse
+> interfaces accurately (including members inherited via `extends`). TypeScript is resolved from the
+> target workspace's `node_modules`. The rest of the tool is pure .NET. See
+> [Generated Playwright Bridge](#generated-playwright-bridge) for the output and usage.
 
 ### `artifacts` - Generate Specific Artifacts
 
@@ -244,6 +268,12 @@ e2e/
 │   ├── base.component.ts       # Abstract base class for all component objects
 │   ├── kpi-card.component.ts   # Root-Locator-scoped component objects
 │   └── ...
+│
+├── bridge/                     # Service-interface mocks + window bridge (ppg bridge)
+│   ├── bridge-registry.ts      # Call recorder + window.__e2eBridge control API
+│   ├── bridge-providers.ts     # provideE2EBridge() Angular providers
+│   ├── playwright-bridge.ts    # Typed PlaywrightBridge client for tests
+│   └── mocks/                  # One recording mock per InjectionToken interface
 │
 ├── helpers/                    # Selector constants
 │   ├── login.selectors.ts
@@ -507,6 +537,64 @@ test.describe('KpiCard', () => {
     await component.expectVisible();
   });
 });
+```
+
+### Generated Playwright Bridge
+
+Run `ppg bridge <path>` to scan for `InjectionToken`-backed service interfaces and generate a bridge
+that lets tests verify service calls, stub return values, and drive the UI from fake service data.
+Given a tokenized service:
+
+```typescript
+// src/app/services/local-storage.token.ts
+export interface ILocalStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+export const LOCAL_STORAGE = new InjectionToken<ILocalStorage>('ILocalStorage');
+```
+
+**1. Install the bridge in your E2E build.** `provideE2EBridge()` replaces the real service with a
+recording mock and exposes `window.__e2eBridge`:
+
+```typescript
+// main.e2e.ts (or your test application config)
+import { provideE2EBridge } from './e2e/bridge/bridge-providers';
+
+bootstrapApplication(AppComponent, {
+  providers: [...appConfig.providers, provideE2EBridge()],
+});
+```
+
+**2. Drive and verify services from Playwright tests** using the typed client:
+
+```typescript
+import { test, expect } from '@playwright/test';
+import { PlaywrightBridge } from '../bridge/playwright-bridge';
+
+test('renders stored data and persists changes', async ({ page }) => {
+  const bridge = new PlaywrightBridge(page);
+
+  // Stub the value the component reads from ILocalStorage, then verify the UI.
+  await bridge.localStorage.setReturn('getItem', 'Ada');
+  await page.goto('/profile');
+  await expect(page.getByTestId('greeting')).toHaveText('Welcome, Ada');
+
+  // Act in the UI, then verify the service interface was actually called.
+  await page.getByRole('button', { name: 'Save' }).click();
+  await bridge.localStorage.expectCalled('setItem');
+  const calls = await bridge.localStorage.getCalls('setItem');
+  expect(calls[0].args).toEqual(['username', 'Ada']);
+});
+```
+
+For interfaces that expose observables (e.g. `watch(): Observable<Notification>`), push values to
+trigger service-level behaviour and verify the UI reacts:
+
+```typescript
+await bridge.notifications.emit('watch', { message: 'New alert' });
+await expect(page.getByRole('alert')).toHaveText('New alert');
 ```
 
 ### Using Generated Code in Tests

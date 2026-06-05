@@ -1,0 +1,13 @@
+{
+  "name": "playwright-pom-generator-sidecar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TypeScript AST sidecar for the Playwright POM generator. Discovers InjectionToken-backed service interfaces and their members so the .NET host can generate the Playwright bridge.",
+  "main": "sidecar.js",
+  "bin": {
+    "ppg-sidecar": "sidecar.js"
+  },
+  "dependencies": {
+    "typescript": "^5.4.0"
+  }
+}

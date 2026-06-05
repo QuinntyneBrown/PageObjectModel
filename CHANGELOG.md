@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-06-05
+
+### Added
+- **`bridge` command** - Generates a Playwright "bridge" that exposes recording mocks of
+  `InjectionToken`-backed service interfaces on `window.__e2eBridge`, so E2E tests can:
+  - verify that calls to a service interface were made (`expectCalled`, `getCalls`, `getCallCount`),
+  - stub return values (`setReturn`) to drive the UI from fake service data, and
+  - push values through observable members (`emit`) to trigger service-level behaviour and verify the UI.
+- **TypeScript AST sidecar** (`src/PlaywrightPomGenerator.Sidecar.Node`) - a Node process that uses
+  the TypeScript compiler to discover `new InjectionToken<IFoo>(...)` declarations and resolve each
+  interface's members (including members inherited via `extends`), returning structured JSON over
+  JSON-RPC. The .NET host (`NodeSidecarTransport` + `TypeScriptAnalyzer`) consumes it. TypeScript is
+  resolved from the target workspace's `node_modules` (or a copy installed in the sidecar directory).
+- **Generated bridge output** (new `bridge/` directory):
+  - `bridge-registry.ts` - the call recorder, stub store, observable subjects, and the
+    `window.__e2eBridge` control API.
+  - `mocks/{kebab}.mock.ts` per interface - a recording mock implementing the interface, with methods
+    typed via `Parameters<I['m']>` / `ReturnType<I['m']>` (so referenced DTO types need not be imported).
+  - `bridge-providers.ts` - `provideE2EBridge()` Angular providers that install the bridge and wire
+    each token to its mock (add to the app config in E2E builds).
+  - `playwright-bridge.ts` - a typed `PlaywrightBridge` client for use in tests.
+
+### Changed
+- The `bridge` command requires Node.js (it shells out to the TypeScript sidecar); the rest of the
+  tool remains pure .NET.
+- Bumped tool version to 1.8.0.
+
 ## [1.7.0] - 2026-06-05
 
 ### Changed

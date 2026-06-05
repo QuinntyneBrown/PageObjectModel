@@ -40,6 +40,10 @@ public sealed class CodeGeneratorTests
         _templateEngine.GenerateBaseComponent().Returns("// base component");
         _templateEngine.GenerateComponentObject(Arg.Any<AngularComponentInfo>()).Returns("// component object");
         _templateEngine.GenerateComponentObjectTestSpec(Arg.Any<AngularComponentInfo>()).Returns("// component spec");
+        _templateEngine.GenerateBridgeRegistry().Returns("// registry");
+        _templateEngine.GenerateInterfaceMock(Arg.Any<InjectionTokenInterface>()).Returns("// mock");
+        _templateEngine.GenerateBridgeProviders(Arg.Any<IReadOnlyList<InjectionTokenInterface>>()).Returns("// providers");
+        _templateEngine.GeneratePlaywrightBridge(Arg.Any<IReadOnlyList<InjectionTokenInterface>>()).Returns("// client");
 
         _generator = new CodeGenerator(_analyzer, _templateEngine, _fileSystem, _logger, optionsWrapper);
     }
@@ -396,6 +400,102 @@ public sealed class CodeGeneratorTests
             f.FileType == GeneratedFileType.ComponentObject &&
             f.RelativePath.Contains("kpi-card.component.ts"));
     }
+
+    // ---------------------------------------------------------------------
+    // Bridge
+    // ---------------------------------------------------------------------
+
+    [Fact]
+    public async Task GenerateBridgeAsync_ShouldGenerateRegistryProvidersClientAndMocks()
+    {
+        // Arrange
+        var interfaces = new[] { CreateBridgeInterface() };
+
+        // Act
+        var result = await _generator.GenerateBridgeAsync(interfaces, "/output");
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.GeneratedFiles.Should().OnlyContain(f => f.FileType == GeneratedFileType.Bridge);
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "bridge/bridge-registry.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "bridge/bridge-providers.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "bridge/playwright-bridge.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "bridge/mocks/local-storage.mock.ts");
+    }
+
+    [Fact]
+    public async Task GenerateBridgeAsync_ShouldCreateBridgeAndMocksDirectories()
+    {
+        // Arrange
+        var interfaces = new[] { CreateBridgeInterface() };
+
+        // Act
+        await _generator.GenerateBridgeAsync(interfaces, "/output");
+
+        // Assert
+        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("bridge"));
+        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("mocks"));
+    }
+
+    [Fact]
+    public async Task GenerateBridgeAsync_WithUnresolvedInterface_ShouldWarnAndSkip()
+    {
+        // Arrange - one resolved, one with no interface file
+        var interfaces = new[]
+        {
+            CreateBridgeInterface(),
+            CreateBridgeInterface("IMissing", "MISSING", interfaceFile: null)
+        };
+
+        // Act
+        var result = await _generator.GenerateBridgeAsync(interfaces, "/output");
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Warnings.Should().Contain(w => w.Contains("IMissing") && w.Contains("could not be resolved"));
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "bridge/mocks/local-storage.mock.ts");
+        result.GeneratedFiles.Should().NotContain(f => f.RelativePath.Contains("missing"));
+    }
+
+    [Fact]
+    public async Task GenerateBridgeAsync_WithAllUnresolved_ShouldFail()
+    {
+        // Arrange
+        var interfaces = new[] { CreateBridgeInterface("IMissing", "MISSING", interfaceFile: null) };
+
+        // Act
+        var result = await _generator.GenerateBridgeAsync(interfaces, "/output");
+
+        // Assert
+        result.Success.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.Contains("No injection-token-backed interfaces"));
+    }
+
+    [Fact]
+    public async Task GenerateBridgeAsync_WithNullInterfaces_ShouldThrowArgumentNullException()
+    {
+        var act = () => _generator.GenerateBridgeAsync(null!, "/output");
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task GenerateBridgeAsync_WithNullOutput_ShouldThrowArgumentNullException()
+    {
+        var act = () => _generator.GenerateBridgeAsync(new[] { CreateBridgeInterface() }, null!);
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    private static InjectionTokenInterface CreateBridgeInterface(
+        string interfaceName = "ILocalStorage",
+        string tokenName = "LOCAL_STORAGE",
+        string? interfaceFile = "/app/src/app/services/local-storage.token.ts") => new()
+    {
+        TokenName = tokenName,
+        InterfaceName = interfaceName,
+        TokenFilePath = "/app/src/app/services/local-storage.token.ts",
+        InterfaceFilePath = interfaceFile,
+        Members = [new InterfaceMember { Name = "setItem", IsMethod = true, ReturnType = "void", ReturnsVoid = true }]
+    };
 
     [Fact]
     public void Constructor_WithNullAnalyzer_ShouldThrowArgumentNullException()

@@ -152,6 +152,15 @@ public static class Program
             context.ExitCode = await handler.ExecuteAsync(path, output, excludeRoutable, context.GetCancellationToken()).ConfigureAwait(false);
         });
 
+        var bridgeCommand = new GenerateBridgeCommand();
+        bridgeCommand.SetHandler(async (context) =>
+        {
+            var path = context.ParseResult.GetValueForArgument(bridgeCommand.PathArgument);
+            var output = context.ParseResult.GetValueForOption(bridgeCommand.OutputOption);
+            var handler = services.GetRequiredService<GenerateBridgeCommandHandler>();
+            context.ExitCode = await handler.ExecuteAsync(path, output, context.GetCancellationToken()).ConfigureAwait(false);
+        });
+
         var signalRMockCommand = new GenerateSignalRMockCommand();
         signalRMockCommand.SetHandler(async (context) =>
         {
@@ -175,6 +184,7 @@ public static class Program
             workspaceCommand,
             libraryCommand,
             componentCommand,
+            bridgeCommand,
             artifactsCommand,
             signalRMockCommand,
             remoteCommand
@@ -231,6 +241,13 @@ public static class Program
         services.AddSingleton<IAngularAnalyzer, AngularAnalyzer>();
         services.AddSingleton<ITemplateEngine, TemplateEngine>();
         services.AddSingleton<ICodeGenerator, CodeGenerator>();
+
+        // TypeScript AST sidecar (Node) used by the bridge command
+        services.AddSingleton<ISidecarTransport>(sp => new NodeSidecarTransport(
+            Environment.GetEnvironmentVariable("POMGEN_NODE") ?? "node",
+            SidecarLocator.Locate(),
+            sp.GetRequiredService<ILogger<NodeSidecarTransport>>()));
+        services.AddSingleton<ITypeScriptAnalyzer, TypeScriptAnalyzer>();
         services.AddSingleton<IGitService, GitService>();
 
         // Command handlers
@@ -238,6 +255,7 @@ public static class Program
         services.AddTransient<GenerateWorkspaceCommandHandler>();
         services.AddTransient<GenerateLibraryCommandHandler>();
         services.AddTransient<GenerateComponentCommandHandler>();
+        services.AddTransient<GenerateBridgeCommandHandler>();
         services.AddTransient<GenerateArtifactsCommandHandler>();
         services.AddTransient<GenerateSignalRMockCommandHandler>();
         services.AddTransient<GenerateRemoteCommandHandler>();

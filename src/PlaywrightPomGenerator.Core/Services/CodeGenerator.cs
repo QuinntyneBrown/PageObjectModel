@@ -504,6 +504,158 @@ public sealed class CodeGenerator : ICodeGenerator
         }
     }
 
+    /// <inheritdoc />
+    public async Task<GenerationResult> GenerateBridgeAsync(
+        IReadOnlyList<InjectionTokenInterface> interfaces,
+        string outputPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(interfaces);
+        ArgumentNullException.ThrowIfNull(outputPath);
+
+        _logger.LogInformation("Generating Playwright bridge for {Count} interface(s)", interfaces.Count);
+
+        var generatedFiles = new List<GeneratedFile>();
+        var warnings = new List<string>();
+
+        try
+        {
+            var fullOutputPath = _fileSystem.GetFullPath(outputPath);
+            _fileSystem.CreateDirectory(fullOutputPath);
+
+            var bridgeDir = _fileSystem.CombinePath(fullOutputPath, "bridge");
+            var mocksDir = _fileSystem.CombinePath(bridgeDir, "mocks");
+            _fileSystem.CreateDirectory(bridgeDir);
+            _fileSystem.CreateDirectory(mocksDir);
+
+            var resolved = new List<InjectionTokenInterface>();
+            foreach (var token in interfaces)
+            {
+                if (token.InterfaceFilePath is null)
+                {
+                    warnings.Add($"Interface {token.InterfaceName} (token {token.TokenName}) could not be resolved; skipped.");
+                    continue;
+                }
+
+                if (token.Members.Count == 0)
+                {
+                    warnings.Add($"Interface {token.InterfaceName} has no members; generated an empty mock.");
+                }
+
+                resolved.Add(EnrichBridgeInterface(token, bridgeDir, mocksDir));
+            }
+
+            if (resolved.Count == 0)
+            {
+                return new GenerationResult
+                {
+                    Success = false,
+                    Errors = ["No injection-token-backed interfaces were resolved."],
+                    Warnings = warnings
+                };
+            }
+
+            var registryFile = await WriteBridgeFileAsync(
+                _fileSystem.CombinePath(bridgeDir, "bridge-registry.ts"),
+                "bridge/bridge-registry.ts",
+                _templateEngine.GenerateBridgeRegistry(),
+                cancellationToken).ConfigureAwait(false);
+            generatedFiles.Add(registryFile);
+
+            var providersFile = await WriteBridgeFileAsync(
+                _fileSystem.CombinePath(bridgeDir, "bridge-providers.ts"),
+                "bridge/bridge-providers.ts",
+                _templateEngine.GenerateBridgeProviders(resolved),
+                cancellationToken).ConfigureAwait(false);
+            generatedFiles.Add(providersFile);
+
+            var clientFile = await WriteBridgeFileAsync(
+                _fileSystem.CombinePath(bridgeDir, "playwright-bridge.ts"),
+                "bridge/playwright-bridge.ts",
+                _templateEngine.GeneratePlaywrightBridge(resolved),
+                cancellationToken).ConfigureAwait(false);
+            generatedFiles.Add(clientFile);
+
+            foreach (var token in resolved)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    var fileName = $"{token.MockFileStem}.ts";
+                    var mockFile = await WriteBridgeFileAsync(
+                        _fileSystem.CombinePath(mocksDir, fileName),
+                        $"bridge/mocks/{fileName}",
+                        _templateEngine.GenerateInterfaceMock(token),
+                        cancellationToken).ConfigureAwait(false);
+                    generatedFiles.Add(mockFile);
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add($"Failed to generate mock for {token.InterfaceName}: {ex.Message}");
+                    _logger.LogWarning(ex, "Failed to generate mock for {InterfaceName}", token.InterfaceName);
+                }
+            }
+
+            return GenerationResult.Successful(generatedFiles, warnings.Count > 0 ? warnings : null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate Playwright bridge");
+            return GenerationResult.Failed($"Failed to generate bridge: {ex.Message}");
+        }
+    }
+
+    private async Task<GeneratedFile> WriteBridgeFileAsync(
+        string filePath,
+        string relativePath,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken).ConfigureAwait(false);
+
+        return new GeneratedFile
+        {
+            RelativePath = relativePath,
+            AbsolutePath = filePath,
+            FileType = GeneratedFileType.Bridge,
+            Content = content
+        };
+    }
+
+    private static InjectionTokenInterface EnrichBridgeInterface(InjectionTokenInterface token, string bridgeDir, string mocksDir)
+    {
+        var stripped = StripInterfacePrefix(token.InterfaceName);
+        return token with
+        {
+            MockClassName = stripped + "Mock",
+            MockFileStem = ToKebabCase(stripped) + ".mock",
+            PlaywrightAccessor = ToCamelCase(stripped),
+            TokenImportPath = ToRelativeImport(bridgeDir, token.TokenFilePath),
+            InterfaceImportPath = token.InterfaceFilePath is null ? null : ToRelativeImport(mocksDir, token.InterfaceFilePath)
+        };
+    }
+
+    private static string ToRelativeImport(string fromDir, string toFile)
+    {
+        var relative = Path.GetRelativePath(fromDir, toFile).Replace('\\', '/');
+        if (relative.EndsWith(".ts", StringComparison.OrdinalIgnoreCase))
+        {
+            relative = relative[..^3];
+        }
+        if (!relative.StartsWith("./", StringComparison.Ordinal) && !relative.StartsWith("../", StringComparison.Ordinal))
+        {
+            relative = "./" + relative;
+        }
+        return relative;
+    }
+
+    private static string StripInterfacePrefix(string name) =>
+        name.Length >= 2 && name[0] == 'I' && char.IsUpper(name[1]) ? name[1..] : name;
+
+    private static string ToCamelCase(string input) =>
+        string.IsNullOrEmpty(input) ? input : char.ToLowerInvariant(input[0]) + input[1..];
+
     private async Task<GeneratedFile> GenerateConfigFileAsync(
         AngularProjectInfo project,
         string outputPath,

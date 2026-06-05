@@ -14,7 +14,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>PlaywrightPomGenerator</PackageId>
-    <Version>1.7.0</Version>
+    <Version>1.8.0</Version>
     <Authors>PlaywrightPomGenerator Contributors</Authors>
     <Description>A CLI tool that generates Playwright Page Object Model (POM) tests for Angular applications. Automatically analyzes Angular components and creates type-safe page objects, selectors, test fixtures, and test specs.</Description>
     <PackageTags>playwright;angular;testing;e2e;page-object-model;pom;test-automation;code-generation</PackageTags>
@@ -46,6 +46,12 @@
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Condition="Exists('..\..\README.md')" />
+  </ItemGroup>
+
+  <!-- Ship the Node TypeScript AST sidecar (used by the 'bridge' command) alongside the tool. -->
+  <ItemGroup>
+    <None Include="..\PlaywrightPomGenerator.Sidecar.Node\sidecar.js" Link="sidecar\sidecar.js" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="tools\net8.0\any\sidecar\" />
+    <None Include="..\PlaywrightPomGenerator.Sidecar.Node\package.json" Link="sidecar\package.json" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="tools\net8.0\any\sidecar\" />
   </ItemGroup>
 
 </Project>
