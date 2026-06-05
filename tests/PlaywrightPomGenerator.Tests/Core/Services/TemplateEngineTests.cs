@@ -375,7 +375,7 @@ public sealed class TemplateEngineTests
         // Assert
         result.Should().Contain("import { Locator, expect } from '@playwright/test'");
         result.Should().Contain("import { BaseComponent } from './base.component'");
-        result.Should().Contain("export class KpiCardComponentObject extends BaseComponent");
+        result.Should().Contain("export class KpiCard extends BaseComponent");
         result.Should().Contain("static readonly hostSelector = 'app-kpi-card';");
         result.Should().Contain("constructor(root: Locator)");
         result.Should().Contain("super(root);");
@@ -459,7 +459,7 @@ public sealed class TemplateEngineTests
         var result = _engine.GenerateComponentObject(component);
 
         // Assert
-        result.Should().Contain("export class EmptyWidgetComponentObject extends BaseComponent");
+        result.Should().Contain("export class EmptyWidget extends BaseComponent");
         result.Should().Contain("static readonly hostSelector = 'app-empty-widget';");
         result.Should().Contain("constructor(root: Locator)");
         result.Should().Contain("super(root);");
@@ -467,7 +467,7 @@ public sealed class TemplateEngineTests
     }
 
     [Fact]
-    public void GenerateComponentObject_WithoutComponentSuffix_ShouldStillAppendComponentObject()
+    public void GenerateComponentObject_WithoutComponentSuffix_ShouldUseNameAsIs()
     {
         // Arrange
         var component = new AngularComponentInfo
@@ -481,7 +481,7 @@ public sealed class TemplateEngineTests
         var result = _engine.GenerateComponentObject(component);
 
         // Assert
-        result.Should().Contain("export class WidgetComponentObject extends BaseComponent");
+        result.Should().Contain("export class Widget extends BaseComponent");
     }
 
     [Fact]
@@ -526,11 +526,11 @@ public sealed class TemplateEngineTests
 
         // Assert
         result.Should().Contain("import { test, expect } from '@playwright/test'");
-        result.Should().Contain("import { KpiCardComponentObject } from '../component-objects/kpi-card.component'");
+        result.Should().Contain("import { KpiCard } from '../components/kpi-card.component'");
         result.Should().Contain("const HOST_PAGE_URL");
         result.Should().Contain("await page.goto(HOST_PAGE_URL);");
-        result.Should().Contain("new KpiCardComponentObject(");
-        result.Should().Contain("page.locator(KpiCardComponentObject.hostSelector).first()");
+        result.Should().Contain("new KpiCard(");
+        result.Should().Contain("page.locator(KpiCard.hostSelector).first()");
         result.Should().Contain("await component.expectVisible();");
         result.Should().NotContain(".navigate(");
         result.Should().NotContain("fixtures");

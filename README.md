@@ -240,7 +240,7 @@ e2e/
 │   ├── dashboard.page.ts
 │   └── ...
 │
-├── component-objects/          # Component Object Model classes (ppg component)
+├── components/                 # Component Object Model classes (ppg component)
 │   ├── base.component.ts       # Abstract base class for all component objects
 │   ├── kpi-card.component.ts   # Root-Locator-scoped component objects
 │   └── ...
@@ -390,7 +390,7 @@ it composes inside pages and works even when the component renders many times.
 All component objects extend `BaseComponent`:
 
 ```typescript
-// component-objects/base.component.ts
+// components/base.component.ts
 import { Locator, expect } from '@playwright/test';
 
 /** Abstract base class for all component objects. Scoped to a root Locator, not a Page. */
@@ -433,11 +433,11 @@ A component object exposes its host selector as `static readonly hostSelector` a
 locator on `this.root` — there is no `navigate()`:
 
 ```typescript
-// component-objects/kpi-card.component.ts
+// components/kpi-card.component.ts
 import { Locator, expect } from '@playwright/test';
 import { BaseComponent } from './base.component';
 
-export class KpiCardComponentObject extends BaseComponent {
+export class KpiCard extends BaseComponent {
   /** Host element selector. Use to build the root locator from a Page or parent. */
   static readonly hostSelector = 'app-kpi-card';
 
@@ -470,20 +470,20 @@ component repeats `N` times:
 
 ```typescript
 // dashboard.page.ts (excerpt)
-import { KpiCardComponentObject } from '../component-objects/kpi-card.component';
+import { KpiCard } from '../components/kpi-card.component';
 
 export class DashboardPage extends BasePage {
   /** A single KPI card scoped by index. */
-  kpiCard(index = 0): KpiCardComponentObject {
-    return new KpiCardComponentObject(
-      this.page.locator(KpiCardComponentObject.hostSelector).nth(index),
+  kpiCard(index = 0): KpiCard {
+    return new KpiCard(
+      this.page.locator(KpiCard.hostSelector).nth(index),
     );
   }
 
   /** A KPI card scoped by its visible title (stable across reorders). */
-  kpiCardByTitle(title: string): KpiCardComponentObject {
-    return new KpiCardComponentObject(
-      this.page.locator(KpiCardComponentObject.hostSelector).filter({ hasText: title }),
+  kpiCardByTitle(title: string): KpiCard {
+    return new KpiCard(
+      this.page.locator(KpiCard.hostSelector).filter({ hasText: title }),
     );
   }
 }
@@ -494,15 +494,15 @@ A generated component-object spec composes the object from its host page rather 
 ```typescript
 // tests/kpi-card.component.spec.ts
 import { test, expect } from '@playwright/test';
-import { KpiCardComponentObject } from '../component-objects/kpi-card.component';
+import { KpiCard } from '../components/kpi-card.component';
 
 const HOST_PAGE_URL = '/'; // TODO: replace with the URL of the page that renders <app-kpi-card>
 
-test.describe('KpiCardComponentObject', () => {
+test.describe('KpiCard', () => {
   test('should render the component', async ({ page }) => {
     await page.goto(HOST_PAGE_URL);
-    const component = new KpiCardComponentObject(
-      page.locator(KpiCardComponentObject.hostSelector).first(),
+    const component = new KpiCard(
+      page.locator(KpiCard.hostSelector).first(),
     );
     await component.expectVisible();
   });

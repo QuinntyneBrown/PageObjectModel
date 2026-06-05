@@ -374,7 +374,7 @@ public sealed class TemplateEngine : ITemplateEngine
         }
 
         sb.AppendLine("import { test, expect } from '@playwright/test';");
-        sb.AppendLine($"import {{ {className} }} from '../component-objects/{kebab}.component';");
+        sb.AppendLine($"import {{ {className} }} from '../components/{kebab}.component';");
         sb.AppendLine();
 
         if (_options.GenerateJsDocComments)
@@ -1725,16 +1725,14 @@ public sealed class TemplateEngine : ITemplateEngine
     }
 
     /// <summary>
-    /// Maps an Angular component class name to its component-object class name
-    /// (e.g. <c>KpiCardComponent</c> → <c>KpiCardComponentObject</c>), paralleling how
-    /// <see cref="GetPageObjectClassName"/> maps page components.
+    /// Maps an Angular component class name to its component-object class name by stripping the
+    /// <c>Component</c> suffix (e.g. <c>KpiCardComponent</c> → <c>KpiCard</c>).
     /// </summary>
     private static string GetComponentObjectClassName(string componentName)
     {
-        var name = componentName.EndsWith("Component", StringComparison.Ordinal)
+        return componentName.EndsWith("Component", StringComparison.Ordinal)
             ? componentName[..^"Component".Length]
             : componentName;
-        return name + "ComponentObject";
     }
 
     /// <summary>

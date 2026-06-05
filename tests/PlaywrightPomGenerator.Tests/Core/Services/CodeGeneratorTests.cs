@@ -213,10 +213,10 @@ public sealed class CodeGeneratorTests
         result.Success.Should().BeTrue();
         result.GeneratedFiles.Should().Contain(f =>
             f.FileType == GeneratedFileType.ComponentObject &&
-            f.RelativePath == "component-objects/base.component.ts");
+            f.RelativePath == "components/base.component.ts");
         result.GeneratedFiles.Should().Contain(f =>
             f.FileType == GeneratedFileType.ComponentObject &&
-            f.RelativePath == "component-objects/login.component.ts");
+            f.RelativePath == "components/login.component.ts");
         result.GeneratedFiles.Should().Contain(f =>
             f.FileType == GeneratedFileType.TestSpec &&
             f.RelativePath == "tests/login.component.spec.ts");
@@ -232,7 +232,7 @@ public sealed class CodeGeneratorTests
         await _generator.GenerateComponentObjectsAsync(project, "/output");
 
         // Assert
-        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("component-objects"));
+        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("components"));
         _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("tests"));
     }
 
@@ -247,7 +247,7 @@ public sealed class CodeGeneratorTests
 
         // Assert
         result.GeneratedFiles
-            .Count(f => f.RelativePath == "component-objects/base.component.ts")
+            .Count(f => f.RelativePath == "components/base.component.ts")
             .Should().Be(1);
     }
 
@@ -261,8 +261,8 @@ public sealed class CodeGeneratorTests
         var result = await _generator.GenerateComponentObjectsAsync(project, "/output", excludeRoutable: false);
 
         // Assert - both the routable page and the non-routable widget get component objects
-        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "component-objects/dashboard.component.ts");
-        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "component-objects/kpi-card.component.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "components/dashboard.component.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "components/kpi-card.component.ts");
     }
 
     [Fact]
@@ -275,8 +275,8 @@ public sealed class CodeGeneratorTests
         var result = await _generator.GenerateComponentObjectsAsync(project, "/output", excludeRoutable: true);
 
         // Assert
-        result.GeneratedFiles.Should().NotContain(f => f.RelativePath == "component-objects/dashboard.component.ts");
-        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "component-objects/kpi-card.component.ts");
+        result.GeneratedFiles.Should().NotContain(f => f.RelativePath == "components/dashboard.component.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "components/kpi-card.component.ts");
         result.Warnings.Should().Contain(w => w.Contains("routable") && w.Contains("--exclude-routable"));
     }
 
@@ -313,7 +313,7 @@ public sealed class CodeGeneratorTests
         var result = await _generator.GenerateComponentObjectsAsync(project, "/output", excludeRoutable: true);
 
         // Assert - the skipped routable component produces neither a file nor a 'no selectors' warning
-        result.GeneratedFiles.Should().NotContain(f => f.RelativePath == "component-objects/dashboard.component.ts");
+        result.GeneratedFiles.Should().NotContain(f => f.RelativePath == "components/dashboard.component.ts");
         result.Warnings.Should().NotContain(w => w.Contains("DashboardComponent") && w.Contains("no detected selectors"));
     }
 
@@ -344,7 +344,7 @@ public sealed class CodeGeneratorTests
         // Assert
         result.Success.Should().BeTrue();
         result.Warnings.Should().Contain(w => w.Contains("EmptyWidgetComponent") && w.Contains("no detected selectors"));
-        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "component-objects/empty-widget.component.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "components/empty-widget.component.ts");
     }
 
     [Fact]

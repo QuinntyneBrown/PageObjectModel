@@ -341,7 +341,7 @@ public sealed class CodeGenerator : ICodeGenerator
 
             if (request.GenerateComponentObjects)
             {
-                var componentObjectsDir = _fileSystem.CombinePath(outputPath, "component-objects");
+                var componentObjectsDir = _fileSystem.CombinePath(outputPath, "components");
                 _fileSystem.CreateDirectory(componentObjectsDir);
 
                 // Generate the base component class once.
@@ -434,7 +434,7 @@ public sealed class CodeGenerator : ICodeGenerator
             var fullOutputPath = _fileSystem.GetFullPath(outputPath);
             _fileSystem.CreateDirectory(fullOutputPath);
 
-            var componentObjectsDir = _fileSystem.CombinePath(fullOutputPath, "component-objects");
+            var componentObjectsDir = _fileSystem.CombinePath(fullOutputPath, "components");
             var testsDir = _fileSystem.CombinePath(fullOutputPath, "tests");
             _fileSystem.CreateDirectory(componentObjectsDir);
             _fileSystem.CreateDirectory(testsDir);
@@ -633,7 +633,7 @@ public sealed class CodeGenerator : ICodeGenerator
 
         return new GeneratedFile
         {
-            RelativePath = "component-objects/base.component.ts",
+            RelativePath = "components/base.component.ts",
             AbsolutePath = filePath,
             FileType = GeneratedFileType.ComponentObject,
             Content = content
@@ -654,7 +654,7 @@ public sealed class CodeGenerator : ICodeGenerator
 
         return new GeneratedFile
         {
-            RelativePath = $"component-objects/{fileName}",
+            RelativePath = $"components/{fileName}",
             AbsolutePath = filePath,
             FileType = GeneratedFileType.ComponentObject,
             Content = content

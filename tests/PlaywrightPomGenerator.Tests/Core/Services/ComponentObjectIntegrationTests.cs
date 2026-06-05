@@ -52,8 +52,8 @@ public sealed class ComponentObjectIntegrationTests
             // Assert
             result.Success.Should().BeTrue();
 
-            var basePath = Path.Combine(outputDir, "component-objects", "base.component.ts");
-            var kpiPath = Path.Combine(outputDir, "component-objects", "kpi-card.component.ts");
+            var basePath = Path.Combine(outputDir, "components", "base.component.ts");
+            var kpiPath = Path.Combine(outputDir, "components", "kpi-card.component.ts");
             var specPath = Path.Combine(outputDir, "tests", "kpi-card.component.spec.ts");
 
             File.Exists(basePath).Should().BeTrue();
@@ -66,7 +66,7 @@ public sealed class ComponentObjectIntegrationTests
             baseContent.Should().NotContain("navigate");
 
             var kpiContent = await File.ReadAllTextAsync(kpiPath);
-            kpiContent.Should().Contain("export class KpiCardComponentObject extends BaseComponent");
+            kpiContent.Should().Contain("export class KpiCard extends BaseComponent");
             kpiContent.Should().Contain("static readonly hostSelector = 'app-kpi-card';");
             kpiContent.Should().Contain("this.kpiTitle = this.root.getByTestId('kpi-title');");
             kpiContent.Should().Contain("this.refreshButton = this.root.getByRole('button', { name: 'Refresh' });");
@@ -76,7 +76,7 @@ public sealed class ComponentObjectIntegrationTests
             kpiContent.Count(c => c == '{').Should().Be(kpiContent.Count(c => c == '}'));
 
             var specContent = await File.ReadAllTextAsync(specPath);
-            specContent.Should().Contain("page.locator(KpiCardComponentObject.hostSelector).first()");
+            specContent.Should().Contain("page.locator(KpiCard.hostSelector).first()");
             specContent.Should().NotContain(".navigate(");
         }
         finally
@@ -138,7 +138,7 @@ public sealed class ComponentObjectIntegrationTests
 
             // Assert
             result.Success.Should().BeTrue();
-            var path = Path.Combine(outputDir, "component-objects", "results-panel.component.ts");
+            var path = Path.Combine(outputDir, "components", "results-panel.component.ts");
             var content = await File.ReadAllTextAsync(path);
 
             content.Should().NotContain("this.page");
