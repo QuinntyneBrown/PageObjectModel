@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-06-05
+
+### Changed
+- **Renamed the generated harness from "E2E bridge" to "interface mock" naming.** The `bridge`
+  command now generates an interface-mock harness instead of a bridge:
+  - Output folder `e2e/bridge/` → `e2e/interface-mocks/`.
+  - Files `bridge-registry.ts` → `interface-mock-registry.ts`, `bridge-providers.ts` →
+    `interface-mock-providers.ts`, `playwright-bridge.ts` → `playwright-interface-mocks.ts`.
+  - Generated symbols: `E2EBridgeRegistry` → `InterfaceMockRegistry`, `e2eBridge` → `interfaceMocks`,
+    `E2EBridgeApi` → `InterfaceMockApi`, `installE2EBridge` → `exposeInterfaceMocks`,
+    `provideE2EBridge` → `provideInterfaceMocks`, `window.__e2eBridge` → `window.__interfaceMocks`,
+    `InterfaceBridge` → `InterfaceMockHandle`, `PlaywrightBridge` → `InterfaceMocks`,
+    `BridgeCallRecord` → `InterfaceCallRecord`.
+  - Generated comments describe interface mocks rather than an E2E bridge.
+  - Behavior is unchanged. The `bridge` command name itself is retained.
+
+### Fixed
+- The generated registry's `reset()` now also completes and clears the `ReplaySubject`-backed
+  observable streams (not just recorded calls and stubbed values), so stale observable emissions
+  cannot leak between tests.
+
 ## [1.8.0] - 2026-06-05
 
 ### Added

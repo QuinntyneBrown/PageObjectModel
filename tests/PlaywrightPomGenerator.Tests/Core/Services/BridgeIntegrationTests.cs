@@ -97,32 +97,33 @@ public sealed class BridgeIntegrationTests
                 NullLogger<CodeGenerator>.Instance,
                 optionsWrapper);
 
-            var result = await generator.GenerateBridgeAsync(interfaces, outputDir);
+            var result = await generator.GenerateInterfaceMocksAsync(interfaces, outputDir);
 
             result.Success.Should().BeTrue();
 
-            var registry = await File.ReadAllTextAsync(Path.Combine(outputDir, "bridge", "bridge-registry.ts"));
-            registry.Should().Contain("__e2eBridge");
-            registry.Should().Contain("export class E2EBridgeRegistry");
-            registry.Should().Contain("export function installE2EBridge()");
+            var registry = await File.ReadAllTextAsync(Path.Combine(outputDir, "interface-mocks", "interface-mock-registry.ts"));
+            registry.Should().Contain("__interfaceMocks");
+            registry.Should().Contain("export class InterfaceMockRegistry");
+            registry.Should().Contain("export function exposeInterfaceMocks()");
+            registry.Should().NotContain("e2eBridge");
 
-            var mock = await File.ReadAllTextAsync(Path.Combine(outputDir, "bridge", "mocks", "local-storage.mock.ts"));
+            var mock = await File.ReadAllTextAsync(Path.Combine(outputDir, "interface-mocks", "mocks", "local-storage.mock.ts"));
             mock.Should().Contain("export class LocalStorageMock implements ILocalStorage");
             mock.Should().Contain("static readonly interfaceName = 'ILocalStorage';");
             mock.Should().Contain("getItem(...args: Parameters<ILocalStorage['getItem']>): ReturnType<ILocalStorage['getItem']>");
-            mock.Should().Contain("e2eBridge.invoke('ILocalStorage', 'setItem', args);");
-            mock.Should().Contain("e2eBridge.stream('ILocalStorage', 'changes$')");
-            mock.Should().Contain("from '../bridge-registry'");
+            mock.Should().Contain("interfaceMocks.invoke('ILocalStorage', 'setItem', args);");
+            mock.Should().Contain("interfaceMocks.stream('ILocalStorage', 'changes$')");
+            mock.Should().Contain("from '../interface-mock-registry'");
             mock.Count(c => c == '{').Should().Be(mock.Count(c => c == '}'));
 
-            var providers = await File.ReadAllTextAsync(Path.Combine(outputDir, "bridge", "bridge-providers.ts"));
-            providers.Should().Contain("export function provideE2EBridge(): EnvironmentProviders");
+            var providers = await File.ReadAllTextAsync(Path.Combine(outputDir, "interface-mocks", "interface-mock-providers.ts"));
+            providers.Should().Contain("export function provideInterfaceMocks(): EnvironmentProviders");
             providers.Should().Contain("{ provide: LOCAL_STORAGE, useClass: LocalStorageMock }");
             providers.Should().Contain("import { LOCAL_STORAGE }");
 
-            var client = await File.ReadAllTextAsync(Path.Combine(outputDir, "bridge", "playwright-bridge.ts"));
-            client.Should().Contain("export class PlaywrightBridge");
-            client.Should().Contain("readonly localStorage = new InterfaceBridge(this.page, 'ILocalStorage');");
+            var client = await File.ReadAllTextAsync(Path.Combine(outputDir, "interface-mocks", "playwright-interface-mocks.ts"));
+            client.Should().Contain("export class InterfaceMocks {");
+            client.Should().Contain("readonly localStorage = new InterfaceMockHandle(this.page, 'ILocalStorage');");
             client.Should().Contain("async expectCalled(method: string): Promise<void>");
         }
         finally

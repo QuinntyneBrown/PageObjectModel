@@ -1392,10 +1392,10 @@ public sealed class TemplateEngine : ITemplateEngine
     }
 
     /// <inheritdoc />
-    public string GenerateBridgeRegistry()
+    public string GenerateInterfaceMockRegistry()
     {
         var sb = new StringBuilder();
-        var fileName = "bridge-registry.ts";
+        var fileName = "interface-mock-registry.ts";
         void Doc(string comment) { if (_options.GenerateJsDocComments) { sb.AppendLine(comment); } }
 
         var header = GenerateFileHeader(fileName);
@@ -1408,8 +1408,8 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("import { Observable, ReplaySubject } from 'rxjs';");
         sb.AppendLine();
 
-        Doc("/** A single recorded call made against a bridged service interface. */");
-        sb.AppendLine("export interface BridgeCallRecord {");
+        Doc("/** A single recorded call made against a mocked interface. */");
+        sb.AppendLine("export interface InterfaceCallRecord {");
         sb.AppendLine("  interface: string;");
         sb.AppendLine("  method: string;");
         sb.AppendLine("  args: unknown[];");
@@ -1417,9 +1417,9 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("}");
         sb.AppendLine();
 
-        Doc("/** The control API exposed on window.__e2eBridge for Playwright to inspect and drive services. */");
-        sb.AppendLine("export interface E2EBridgeApi {");
-        sb.AppendLine("  getCalls(interfaceName?: string, method?: string): BridgeCallRecord[];");
+        Doc("/** The control API exposed on window.__interfaceMocks for Playwright to inspect and drive interface mocks. */");
+        sb.AppendLine("export interface InterfaceMockApi {");
+        sb.AppendLine("  getCalls(interfaceName?: string, method?: string): InterfaceCallRecord[];");
         sb.AppendLine("  getCallCount(interfaceName: string, method: string): number;");
         sb.AppendLine("  wasCalled(interfaceName: string, method: string): boolean;");
         sb.AppendLine("  setReturn(interfaceName: string, method: string, value: unknown): void;");
@@ -1430,14 +1430,14 @@ public sealed class TemplateEngine : ITemplateEngine
 
         sb.AppendLine("declare global {");
         sb.AppendLine("  interface Window {");
-        sb.AppendLine("    __e2eBridge?: E2EBridgeApi;");
+        sb.AppendLine("    __interfaceMocks?: InterfaceMockApi;");
         sb.AppendLine("  }");
         sb.AppendLine("}");
         sb.AppendLine();
 
-        Doc("/** Records calls, resolves stubbed return values, and backs observable members with subjects. */");
-        sb.AppendLine("export class E2EBridgeRegistry {");
-        sb.AppendLine("  private readonly calls: BridgeCallRecord[] = [];");
+        Doc("/** Records calls, resolves stubbed values, and backs observable members with subjects. */");
+        sb.AppendLine("export class InterfaceMockRegistry {");
+        sb.AppendLine("  private readonly calls: InterfaceCallRecord[] = [];");
         sb.AppendLine("  private readonly returns = new Map<string, unknown>();");
         sb.AppendLine("  private readonly subjects = new Map<string, ReplaySubject<unknown>>();");
         sb.AppendLine();
@@ -1462,7 +1462,7 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine();
 
         Doc("  /** Returns recorded calls, optionally filtered by interface and/or method. */");
-        sb.AppendLine("  getCalls(interfaceName?: string, method?: string): BridgeCallRecord[] {");
+        sb.AppendLine("  getCalls(interfaceName?: string, method?: string): InterfaceCallRecord[] {");
         sb.AppendLine("    return this.calls.filter(");
         sb.AppendLine("      (c) =>");
         sb.AppendLine("        (interfaceName === undefined || c.interface === interfaceName) &&");
@@ -1491,10 +1491,13 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("  }");
         sb.AppendLine();
 
+        Doc("  /** Clears recorded calls, stubs, and observable subjects so nothing leaks between tests. */");
         sb.AppendLine("  reset(interfaceName?: string): void {");
         sb.AppendLine("    if (interfaceName === undefined) {");
         sb.AppendLine("      this.calls.length = 0;");
         sb.AppendLine("      this.returns.clear();");
+        sb.AppendLine("      this.subjects.forEach((subject) => subject.complete());");
+        sb.AppendLine("      this.subjects.clear();");
         sb.AppendLine("      return;");
         sb.AppendLine("    }");
         sb.AppendLine("    for (let i = this.calls.length - 1; i >= 0; i--) {");
@@ -1505,6 +1508,12 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("    for (const key of [...this.returns.keys()]) {");
         sb.AppendLine("      if (key.startsWith(`${interfaceName}::`)) {");
         sb.AppendLine("        this.returns.delete(key);");
+        sb.AppendLine("      }");
+        sb.AppendLine("    }");
+        sb.AppendLine("    for (const [key, subject] of [...this.subjects]) {");
+        sb.AppendLine("      if (key.startsWith(`${interfaceName}::`)) {");
+        sb.AppendLine("        subject.complete();");
+        sb.AppendLine("        this.subjects.delete(key);");
         sb.AppendLine("      }");
         sb.AppendLine("    }");
         sb.AppendLine("  }");
@@ -1522,19 +1531,19 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("}");
         sb.AppendLine();
 
-        Doc("/** The shared registry instance used by all generated mocks. */");
-        sb.AppendLine("export const e2eBridge = new E2EBridgeRegistry();");
+        Doc("/** The shared registry used by all generated interface mocks. */");
+        sb.AppendLine("export const interfaceMocks = new InterfaceMockRegistry();");
         sb.AppendLine();
 
-        Doc("/** Installs the control API on window.__e2eBridge. Wired automatically by provideE2EBridge(). */");
-        sb.AppendLine("export function installE2EBridge(): void {");
-        sb.AppendLine("  window.__e2eBridge = {");
-        sb.AppendLine("    getCalls: (i, m) => e2eBridge.getCalls(i, m),");
-        sb.AppendLine("    getCallCount: (i, m) => e2eBridge.getCallCount(i, m),");
-        sb.AppendLine("    wasCalled: (i, m) => e2eBridge.wasCalled(i, m),");
-        sb.AppendLine("    setReturn: (i, m, v) => e2eBridge.setReturn(i, m, v),");
-        sb.AppendLine("    emit: (i, mem, v) => e2eBridge.emit(i, mem, v),");
-        sb.AppendLine("    reset: (i) => e2eBridge.reset(i),");
+        Doc("/** Installs the interface mock control API. Wired automatically by provideInterfaceMocks(). */");
+        sb.AppendLine("export function exposeInterfaceMocks(): void {");
+        sb.AppendLine("  window.__interfaceMocks = {");
+        sb.AppendLine("    getCalls: (i, m) => interfaceMocks.getCalls(i, m),");
+        sb.AppendLine("    getCallCount: (i, m) => interfaceMocks.getCallCount(i, m),");
+        sb.AppendLine("    wasCalled: (i, m) => interfaceMocks.wasCalled(i, m),");
+        sb.AppendLine("    setReturn: (i, m, v) => interfaceMocks.setReturn(i, m, v),");
+        sb.AppendLine("    emit: (i, mem, v) => interfaceMocks.emit(i, mem, v),");
+        sb.AppendLine("    reset: (i) => interfaceMocks.reset(i),");
         sb.AppendLine("  };");
         sb.AppendLine("}");
 
@@ -1565,10 +1574,10 @@ public sealed class TemplateEngine : ITemplateEngine
         {
             sb.AppendLine($"import {{ {iface} }} from '{interfaceInfo.InterfaceImportPath}';");
         }
-        sb.AppendLine("import { e2eBridge } from '../bridge-registry';");
+        sb.AppendLine("import { interfaceMocks } from '../interface-mock-registry';");
         sb.AppendLine();
 
-        Doc($"/** Recording mock for {iface}, registered under the {interfaceInfo.TokenName} token. */");
+        Doc($"/** Recording mock for the {iface} interface, registered under the {interfaceInfo.TokenName} token. */");
         var implementsClause = hasInterfaceType ? $" implements {iface}" : "";
         sb.AppendLine($"export class {className}{implementsClause} {{");
         sb.AppendLine($"  static readonly interfaceName = '{iface}';");
@@ -1584,7 +1593,7 @@ public sealed class TemplateEngine : ITemplateEngine
         {
             var memberType = hasInterfaceType ? $"{iface}['{property.Name}']" : "unknown";
             var resolver = property.IsObservable ? "stream" : "value";
-            sb.AppendLine($"  readonly {property.Name}: {memberType} = e2eBridge.{resolver}('{iface}', '{property.Name}') as {memberType};");
+            sb.AppendLine($"  readonly {property.Name}: {memberType} = interfaceMocks.{resolver}('{iface}', '{property.Name}') as {memberType};");
         }
 
         if (methods.Count > 0)
@@ -1598,16 +1607,16 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine($"  {method.Name}(...args: {paramsType}): {returnType} {{");
             if (method.ReturnsVoid)
             {
-                sb.AppendLine($"    e2eBridge.invoke('{iface}', '{method.Name}', args);");
+                sb.AppendLine($"    interfaceMocks.invoke('{iface}', '{method.Name}', args);");
             }
             else if (method.IsObservable)
             {
-                sb.AppendLine($"    e2eBridge.invoke('{iface}', '{method.Name}', args);");
-                sb.AppendLine($"    return e2eBridge.stream('{iface}', '{method.Name}') as {returnType};");
+                sb.AppendLine($"    interfaceMocks.invoke('{iface}', '{method.Name}', args);");
+                sb.AppendLine($"    return interfaceMocks.stream('{iface}', '{method.Name}') as {returnType};");
             }
             else
             {
-                sb.AppendLine($"    return e2eBridge.invoke('{iface}', '{method.Name}', args) as {returnType};");
+                sb.AppendLine($"    return interfaceMocks.invoke('{iface}', '{method.Name}', args) as {returnType};");
             }
             sb.AppendLine("  }");
             sb.AppendLine();
@@ -1619,12 +1628,12 @@ public sealed class TemplateEngine : ITemplateEngine
     }
 
     /// <inheritdoc />
-    public string GenerateBridgeProviders(IReadOnlyList<InjectionTokenInterface> interfaces)
+    public string GenerateInterfaceMockProviders(IReadOnlyList<InjectionTokenInterface> interfaces)
     {
         ArgumentNullException.ThrowIfNull(interfaces);
 
         var sb = new StringBuilder();
-        var fileName = "bridge-providers.ts";
+        var fileName = "interface-mock-providers.ts";
         void Doc(string comment) { if (_options.GenerateJsDocComments) { sb.AppendLine(comment); } }
 
         var header = GenerateFileHeader(fileName);
@@ -1635,7 +1644,7 @@ public sealed class TemplateEngine : ITemplateEngine
         }
 
         sb.AppendLine("import { EnvironmentProviders, makeEnvironmentProviders, ENVIRONMENT_INITIALIZER } from '@angular/core';");
-        sb.AppendLine("import { installE2EBridge } from './bridge-registry';");
+        sb.AppendLine("import { exposeInterfaceMocks } from './interface-mock-registry';");
         foreach (var i in interfaces)
         {
             var mockClass = i.MockClassName ?? GetMockClassName(i.InterfaceName);
@@ -1646,12 +1655,12 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine();
 
         Doc("/**");
-        Doc(" * Installs the E2E bridge and replaces each tokenized service with a recording mock.");
-        Doc(" * Add provideE2EBridge() to your application's providers in E2E/test builds only.");
+        Doc(" * Installs the interface mocks and replaces each tokenized interface with a recording mock.");
+        Doc(" * Add provideInterfaceMocks() to your application's providers in test builds only.");
         Doc(" */");
-        sb.AppendLine("export function provideE2EBridge(): EnvironmentProviders {");
+        sb.AppendLine("export function provideInterfaceMocks(): EnvironmentProviders {");
         sb.AppendLine("  return makeEnvironmentProviders([");
-        sb.AppendLine("    { provide: ENVIRONMENT_INITIALIZER, multi: true, useValue: () => installE2EBridge() },");
+        sb.AppendLine("    { provide: ENVIRONMENT_INITIALIZER, multi: true, useValue: () => exposeInterfaceMocks() },");
         foreach (var i in interfaces)
         {
             var mockClass = i.MockClassName ?? GetMockClassName(i.InterfaceName);
@@ -1664,12 +1673,12 @@ public sealed class TemplateEngine : ITemplateEngine
     }
 
     /// <inheritdoc />
-    public string GeneratePlaywrightBridge(IReadOnlyList<InjectionTokenInterface> interfaces)
+    public string GeneratePlaywrightInterfaceMocks(IReadOnlyList<InjectionTokenInterface> interfaces)
     {
         ArgumentNullException.ThrowIfNull(interfaces);
 
         var sb = new StringBuilder();
-        var fileName = "playwright-bridge.ts";
+        var fileName = "playwright-interface-mocks.ts";
         void Doc(string comment) { if (_options.GenerateJsDocComments) { sb.AppendLine(comment); } }
 
         var header = GenerateFileHeader(fileName);
@@ -1680,21 +1689,21 @@ public sealed class TemplateEngine : ITemplateEngine
         }
 
         sb.AppendLine("import { Page } from '@playwright/test';");
-        sb.AppendLine("import type { BridgeCallRecord, E2EBridgeApi } from './bridge-registry';");
+        sb.AppendLine("import type { InterfaceCallRecord, InterfaceMockApi } from './interface-mock-registry';");
         sb.AppendLine();
 
-        sb.AppendLine("type BridgeWindow = { __e2eBridge: E2EBridgeApi };");
+        sb.AppendLine("type MockWindow = { __interfaceMocks: InterfaceMockApi };");
         sb.AppendLine();
 
-        Doc("/** Typed wrapper over window.__e2eBridge for a single service interface. */");
-        sb.AppendLine("export class InterfaceBridge {");
+        Doc("/** Typed Playwright wrapper for a single mocked interface. */");
+        sb.AppendLine("export class InterfaceMockHandle {");
         sb.AppendLine("  constructor(private readonly page: Page, private readonly interfaceName: string) {}");
         sb.AppendLine();
 
         Doc("  /** Returns recorded calls for this interface, optionally filtered by method. */");
-        sb.AppendLine("  getCalls(method?: string): Promise<BridgeCallRecord[]> {");
+        sb.AppendLine("  getCalls(method?: string): Promise<InterfaceCallRecord[]> {");
         sb.AppendLine("    return this.page.evaluate(");
-        sb.AppendLine("      ([i, m]) => (window as unknown as BridgeWindow).__e2eBridge.getCalls(i, m ?? undefined),");
+        sb.AppendLine("      ([i, m]) => (window as unknown as MockWindow).__interfaceMocks.getCalls(i, m ?? undefined),");
         sb.AppendLine("      [this.interfaceName, method ?? null] as [string, string | null],");
         sb.AppendLine("    );");
         sb.AppendLine("  }");
@@ -1703,7 +1712,7 @@ public sealed class TemplateEngine : ITemplateEngine
         Doc("  /** Returns how many times the given method was called. */");
         sb.AppendLine("  getCallCount(method: string): Promise<number> {");
         sb.AppendLine("    return this.page.evaluate(");
-        sb.AppendLine("      ([i, m]) => (window as unknown as BridgeWindow).__e2eBridge.getCallCount(i, m),");
+        sb.AppendLine("      ([i, m]) => (window as unknown as MockWindow).__interfaceMocks.getCallCount(i, m),");
         sb.AppendLine("      [this.interfaceName, method] as [string, string],");
         sb.AppendLine("    );");
         sb.AppendLine("  }");
@@ -1712,7 +1721,7 @@ public sealed class TemplateEngine : ITemplateEngine
         Doc("  /** Returns whether the given method was called at least once. */");
         sb.AppendLine("  wasCalled(method: string): Promise<boolean> {");
         sb.AppendLine("    return this.page.evaluate(");
-        sb.AppendLine("      ([i, m]) => (window as unknown as BridgeWindow).__e2eBridge.wasCalled(i, m),");
+        sb.AppendLine("      ([i, m]) => (window as unknown as MockWindow).__interfaceMocks.wasCalled(i, m),");
         sb.AppendLine("      [this.interfaceName, method] as [string, string],");
         sb.AppendLine("    );");
         sb.AppendLine("  }");
@@ -1737,7 +1746,7 @@ public sealed class TemplateEngine : ITemplateEngine
         Doc("  /** Stubs the return value of a method for subsequent calls. */");
         sb.AppendLine("  setReturn(method: string, value: unknown): Promise<void> {");
         sb.AppendLine("    return this.page.evaluate(");
-        sb.AppendLine("      ([i, m, v]) => (window as unknown as BridgeWindow).__e2eBridge.setReturn(i, m, v),");
+        sb.AppendLine("      ([i, m, v]) => (window as unknown as MockWindow).__interfaceMocks.setReturn(i, m, v),");
         sb.AppendLine("      [this.interfaceName, method, value] as [string, string, unknown],");
         sb.AppendLine("    );");
         sb.AppendLine("  }");
@@ -1746,7 +1755,7 @@ public sealed class TemplateEngine : ITemplateEngine
         Doc("  /** Pushes a value through an observable member's stream to drive the UI. */");
         sb.AppendLine("  emit(member: string, value: unknown): Promise<void> {");
         sb.AppendLine("    return this.page.evaluate(");
-        sb.AppendLine("      ([i, m, v]) => (window as unknown as BridgeWindow).__e2eBridge.emit(i, m, v),");
+        sb.AppendLine("      ([i, m, v]) => (window as unknown as MockWindow).__interfaceMocks.emit(i, m, v),");
         sb.AppendLine("      [this.interfaceName, member, value] as [string, string, unknown],");
         sb.AppendLine("    );");
         sb.AppendLine("  }");
@@ -1755,7 +1764,7 @@ public sealed class TemplateEngine : ITemplateEngine
         Doc("  /** Clears recorded calls and stubs for this interface. */");
         sb.AppendLine("  reset(): Promise<void> {");
         sb.AppendLine("    return this.page.evaluate(");
-        sb.AppendLine("      (i) => (window as unknown as BridgeWindow).__e2eBridge.reset(i),");
+        sb.AppendLine("      (i) => (window as unknown as MockWindow).__interfaceMocks.reset(i),");
         sb.AppendLine("      this.interfaceName,");
         sb.AppendLine("    );");
         sb.AppendLine("  }");
@@ -1764,22 +1773,22 @@ public sealed class TemplateEngine : ITemplateEngine
 
         Doc("/**");
         Doc(" * Entry point for Playwright tests:");
-        Doc(" *   const bridge = new PlaywrightBridge(page);");
-        Doc(" *   await bridge.<accessor>.expectCalled('someMethod');");
+        Doc(" *   const mocks = new InterfaceMocks(page);");
+        Doc(" *   await mocks.<accessor>.expectCalled('someMethod');");
         Doc(" */");
-        sb.AppendLine("export class PlaywrightBridge {");
+        sb.AppendLine("export class InterfaceMocks {");
         sb.AppendLine("  constructor(private readonly page: Page) {}");
         sb.AppendLine();
         foreach (var i in interfaces)
         {
             var accessor = i.PlaywrightAccessor ?? GetPlaywrightAccessor(i.InterfaceName);
-            Doc($"  /** Bridge for {i.InterfaceName} (token {i.TokenName}). */");
-            sb.AppendLine($"  readonly {accessor} = new InterfaceBridge(this.page, '{i.InterfaceName}');");
+            Doc($"  /** Handle for the {i.InterfaceName} interface mock (token {i.TokenName}). */");
+            sb.AppendLine($"  readonly {accessor} = new InterfaceMockHandle(this.page, '{i.InterfaceName}');");
         }
         sb.AppendLine();
-        Doc("  /** Clears all recorded calls and stubs across every bridged interface. */");
+        Doc("  /** Clears all recorded calls and stubs across every mocked interface. */");
         sb.AppendLine("  reset(): Promise<void> {");
-        sb.AppendLine("    return this.page.evaluate(() => (window as unknown as BridgeWindow).__e2eBridge.reset());");
+        sb.AppendLine("    return this.page.evaluate(() => (window as unknown as MockWindow).__interfaceMocks.reset());");
         sb.AppendLine("  }");
         sb.AppendLine("}");
 

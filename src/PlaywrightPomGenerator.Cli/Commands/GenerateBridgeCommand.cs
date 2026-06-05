@@ -23,7 +23,7 @@ public sealed class GenerateBridgeCommand : Command
     /// Initializes a new instance of the <see cref="GenerateBridgeCommand"/> class.
     /// </summary>
     public GenerateBridgeCommand()
-        : base("bridge", "Generate a Playwright bridge: window-exposed recording mocks for InjectionToken-backed service interfaces, so E2E tests can verify service calls, stub return values, and drive the UI.")
+        : base("bridge", "Generate an interface mock harness: window-exposed recording mocks for InjectionToken-backed service interfaces, so Playwright tests can verify calls, stub return values, and drive the UI.")
     {
         PathArgument = new Argument<string>("path")
         {
@@ -91,7 +91,7 @@ public sealed class GenerateBridgeCommandHandler
 
             var outputPath = output ?? Path.Combine(path, "e2e");
 
-            var result = await _generator.GenerateBridgeAsync(interfaces, outputPath, cancellationToken)
+            var result = await _generator.GenerateInterfaceMocksAsync(interfaces, outputPath, cancellationToken)
                 .ConfigureAwait(false);
 
             if (result.Success)

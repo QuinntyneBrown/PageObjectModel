@@ -134,7 +134,7 @@ public enum GeneratedFileType
     ComponentObject,
 
     /// <summary>
-    /// Playwright bridge file (service-interface mocks, registry, providers, or client).
+    /// Interface mock harness file (mocks, registry, providers, or Playwright client).
     /// </summary>
-    Bridge
+    InterfaceMock
 }

@@ -70,14 +70,14 @@ public interface ICodeGenerator
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Generates the Playwright bridge: the runtime registry, per-interface recording mocks, the
+    /// Generates the interface mock harness: the runtime registry, per-interface recording mocks, the
     /// Angular providers that wire each token to its mock, and the Playwright-side typed client.
     /// </summary>
     /// <param name="interfaces">The discovered injection-token interfaces.</param>
     /// <param name="outputPath">The output directory path.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The result of the generation operation.</returns>
-    Task<GenerationResult> GenerateBridgeAsync(
+    Task<GenerationResult> GenerateInterfaceMocksAsync(
         IReadOnlyList<InjectionTokenInterface> interfaces,
         string outputPath,
         CancellationToken cancellationToken = default);

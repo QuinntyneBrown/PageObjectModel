@@ -20,22 +20,41 @@ public sealed class BridgeTemplateTests
     }
 
     [Fact]
-    public void GenerateBridgeRegistry_ShouldEmitRegistryAndWindowApi()
+    public void GenerateInterfaceMockRegistry_ShouldEmitRegistryAndWindowApi()
     {
         // Act
-        var result = _engine.GenerateBridgeRegistry();
+        var result = _engine.GenerateInterfaceMockRegistry();
 
         // Assert
         result.Should().Contain("import { Observable, ReplaySubject } from 'rxjs'");
-        result.Should().Contain("export interface BridgeCallRecord");
-        result.Should().Contain("export interface E2EBridgeApi");
-        result.Should().Contain("__e2eBridge?: E2EBridgeApi;");
-        result.Should().Contain("export class E2EBridgeRegistry");
+        result.Should().Contain("export interface InterfaceCallRecord");
+        result.Should().Contain("export interface InterfaceMockApi");
+        result.Should().Contain("__interfaceMocks?: InterfaceMockApi;");
+        result.Should().Contain("export class InterfaceMockRegistry");
         result.Should().Contain("invoke(interfaceName: string, method: string, args: unknown[]): unknown");
         result.Should().Contain("stream(interfaceName: string, member: string): Observable<unknown>");
-        result.Should().Contain("export const e2eBridge = new E2EBridgeRegistry();");
-        result.Should().Contain("export function installE2EBridge(): void");
+        result.Should().Contain("export const interfaceMocks = new InterfaceMockRegistry();");
+        result.Should().Contain("export function exposeInterfaceMocks(): void");
+        // No stale bridge naming should remain.
+        result.Should().NotContain("e2eBridge");
+        result.Should().NotContain("E2EBridge");
+        result.Should().NotContain("__e2eBridge");
         result.Count(c => c == '{').Should().Be(result.Count(c => c == '}'));
+    }
+
+    [Fact]
+    public void GenerateInterfaceMockRegistry_Reset_ShouldClearSubjectsAsWellAsCallsAndStubs()
+    {
+        // Act
+        var result = _engine.GenerateInterfaceMockRegistry();
+
+        // Assert - the full reset must complete and clear the observable subjects so stale
+        // emissions cannot leak between tests.
+        result.Should().Contain("this.subjects.forEach((subject) => subject.complete());");
+        result.Should().Contain("this.subjects.clear();");
+        // Per-interface reset clears that interface's subjects too.
+        result.Should().Contain("for (const [key, subject] of [...this.subjects]) {");
+        result.Should().Contain("this.subjects.delete(key);");
     }
 
     [Fact]
@@ -49,19 +68,20 @@ public sealed class BridgeTemplateTests
 
         // Assert
         result.Should().Contain("import { ILocalStorage } from '../../app/services/local-storage.token'");
-        result.Should().Contain("import { e2eBridge } from '../bridge-registry'");
+        result.Should().Contain("import { interfaceMocks } from '../interface-mock-registry'");
         result.Should().Contain("export class LocalStorageMock implements ILocalStorage");
         result.Should().Contain("static readonly interfaceName = 'ILocalStorage';");
         // Methods use indexed-access types so referenced DTO types need not be imported.
         result.Should().Contain("getItem(...args: Parameters<ILocalStorage['getItem']>): ReturnType<ILocalStorage['getItem']>");
-        result.Should().Contain("return e2eBridge.invoke('ILocalStorage', 'getItem', args) as ReturnType<ILocalStorage['getItem']>;");
+        result.Should().Contain("return interfaceMocks.invoke('ILocalStorage', 'getItem', args) as ReturnType<ILocalStorage['getItem']>;");
         // void method records but does not return.
-        result.Should().Contain("e2eBridge.invoke('ILocalStorage', 'setItem', args);");
-        result.Should().NotContain("return e2eBridge.invoke('ILocalStorage', 'setItem'");
+        result.Should().Contain("interfaceMocks.invoke('ILocalStorage', 'setItem', args);");
+        result.Should().NotContain("return interfaceMocks.invoke('ILocalStorage', 'setItem'");
         // observable property backed by a stream; value property by a stub.
-        result.Should().Contain("readonly changes$: ILocalStorage['changes$'] = e2eBridge.stream('ILocalStorage', 'changes$')");
-        result.Should().Contain("readonly length: ILocalStorage['length'] = e2eBridge.value('ILocalStorage', 'length')");
+        result.Should().Contain("readonly changes$: ILocalStorage['changes$'] = interfaceMocks.stream('ILocalStorage', 'changes$')");
+        result.Should().Contain("readonly length: ILocalStorage['length'] = interfaceMocks.value('ILocalStorage', 'length')");
         result.Should().NotContain(": any");
+        result.Should().NotContain("e2eBridge");
         result.Count(c => c == '{').Should().Be(result.Count(c => c == '}'));
     }
 
@@ -78,46 +98,51 @@ public sealed class BridgeTemplateTests
         var result = _engine.GenerateInterfaceMock(iface);
 
         // Assert
-        result.Should().Contain("e2eBridge.invoke('ILocalStorage', 'watch', args);");
-        result.Should().Contain("return e2eBridge.stream('ILocalStorage', 'watch') as ReturnType<ILocalStorage['watch']>;");
+        result.Should().Contain("interfaceMocks.invoke('ILocalStorage', 'watch', args);");
+        result.Should().Contain("return interfaceMocks.stream('ILocalStorage', 'watch') as ReturnType<ILocalStorage['watch']>;");
     }
 
     [Fact]
-    public void GenerateBridgeProviders_ShouldWireTokensToMocks()
+    public void GenerateInterfaceMockProviders_ShouldWireTokensToMocks()
     {
         // Arrange
         var iface = CreateEnrichedInterface();
 
         // Act
-        var result = _engine.GenerateBridgeProviders([iface]);
+        var result = _engine.GenerateInterfaceMockProviders([iface]);
 
         // Assert
         result.Should().Contain("import { EnvironmentProviders, makeEnvironmentProviders, ENVIRONMENT_INITIALIZER } from '@angular/core'");
-        result.Should().Contain("import { installE2EBridge } from './bridge-registry'");
+        result.Should().Contain("import { exposeInterfaceMocks } from './interface-mock-registry'");
         result.Should().Contain("import { LOCAL_STORAGE } from '../app/services/local-storage.token'");
         result.Should().Contain("import { LocalStorageMock } from './mocks/local-storage.mock'");
-        result.Should().Contain("export function provideE2EBridge(): EnvironmentProviders");
-        result.Should().Contain("{ provide: ENVIRONMENT_INITIALIZER, multi: true, useValue: () => installE2EBridge() }");
+        result.Should().Contain("export function provideInterfaceMocks(): EnvironmentProviders");
+        result.Should().Contain("{ provide: ENVIRONMENT_INITIALIZER, multi: true, useValue: () => exposeInterfaceMocks() }");
         result.Should().Contain("{ provide: LOCAL_STORAGE, useClass: LocalStorageMock },");
+        result.Should().NotContain("provideE2EBridge");
+        result.Should().NotContain("installE2EBridge");
     }
 
     [Fact]
-    public void GeneratePlaywrightBridge_ShouldExposeTypedAccessors()
+    public void GeneratePlaywrightInterfaceMocks_ShouldExposeTypedAccessors()
     {
         // Arrange
         var iface = CreateEnrichedInterface();
 
         // Act
-        var result = _engine.GeneratePlaywrightBridge([iface]);
+        var result = _engine.GeneratePlaywrightInterfaceMocks([iface]);
 
         // Assert
         result.Should().Contain("import { Page } from '@playwright/test'");
-        result.Should().Contain("export class InterfaceBridge");
+        result.Should().Contain("export class InterfaceMockHandle");
         result.Should().Contain("async expectCalled(method: string): Promise<void>");
         result.Should().Contain("emit(member: string, value: unknown): Promise<void>");
-        result.Should().Contain("export class PlaywrightBridge");
-        result.Should().Contain("readonly localStorage = new InterfaceBridge(this.page, 'ILocalStorage');");
+        result.Should().Contain("export class InterfaceMocks {");
+        result.Should().Contain("readonly localStorage = new InterfaceMockHandle(this.page, 'ILocalStorage');");
+        result.Should().Contain("__interfaceMocks");
         result.Should().NotContain("as any");
+        result.Should().NotContain("PlaywrightBridge");
+        result.Should().NotContain("InterfaceBridge ");
         result.Count(c => c == '{').Should().Be(result.Count(c => c == '}'));
     }
 
@@ -129,9 +154,9 @@ public sealed class BridgeTemplateTests
     }
 
     [Fact]
-    public void GenerateBridgeProviders_WithNull_ShouldThrowArgumentNullException()
+    public void GenerateInterfaceMockProviders_WithNull_ShouldThrowArgumentNullException()
     {
-        var act = () => _engine.GenerateBridgeProviders(null!);
+        var act = () => _engine.GenerateInterfaceMockProviders(null!);
         act.Should().Throw<ArgumentNullException>();
     }
 

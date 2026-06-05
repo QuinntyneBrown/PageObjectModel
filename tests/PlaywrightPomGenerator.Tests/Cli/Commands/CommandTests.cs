@@ -141,7 +141,7 @@ public sealed class CommandTests
         // Assert
         command.Name.Should().Be("bridge");
         command.Description.Should().Contain("InjectionToken");
-        command.Description.Should().Contain("Playwright bridge");
+        command.Description.Should().Contain("interface mock harness");
     }
 
     [Fact]

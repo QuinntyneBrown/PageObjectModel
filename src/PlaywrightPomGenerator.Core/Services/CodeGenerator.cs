@@ -505,7 +505,7 @@ public sealed class CodeGenerator : ICodeGenerator
     }
 
     /// <inheritdoc />
-    public async Task<GenerationResult> GenerateBridgeAsync(
+    public async Task<GenerationResult> GenerateInterfaceMocksAsync(
         IReadOnlyList<InjectionTokenInterface> interfaces,
         string outputPath,
         CancellationToken cancellationToken = default)
@@ -513,7 +513,7 @@ public sealed class CodeGenerator : ICodeGenerator
         ArgumentNullException.ThrowIfNull(interfaces);
         ArgumentNullException.ThrowIfNull(outputPath);
 
-        _logger.LogInformation("Generating Playwright bridge for {Count} interface(s)", interfaces.Count);
+        _logger.LogInformation("Generating interface mocks for {Count} interface(s)", interfaces.Count);
 
         var generatedFiles = new List<GeneratedFile>();
         var warnings = new List<string>();
@@ -523,9 +523,9 @@ public sealed class CodeGenerator : ICodeGenerator
             var fullOutputPath = _fileSystem.GetFullPath(outputPath);
             _fileSystem.CreateDirectory(fullOutputPath);
 
-            var bridgeDir = _fileSystem.CombinePath(fullOutputPath, "bridge");
-            var mocksDir = _fileSystem.CombinePath(bridgeDir, "mocks");
-            _fileSystem.CreateDirectory(bridgeDir);
+            var interfaceMocksDir = _fileSystem.CombinePath(fullOutputPath, "interface-mocks");
+            var mocksDir = _fileSystem.CombinePath(interfaceMocksDir, "mocks");
+            _fileSystem.CreateDirectory(interfaceMocksDir);
             _fileSystem.CreateDirectory(mocksDir);
 
             var resolved = new List<InjectionTokenInterface>();
@@ -542,7 +542,7 @@ public sealed class CodeGenerator : ICodeGenerator
                     warnings.Add($"Interface {token.InterfaceName} has no members; generated an empty mock.");
                 }
 
-                resolved.Add(EnrichBridgeInterface(token, bridgeDir, mocksDir));
+                resolved.Add(EnrichInterface(token, interfaceMocksDir, mocksDir));
             }
 
             if (resolved.Count == 0)
@@ -555,24 +555,24 @@ public sealed class CodeGenerator : ICodeGenerator
                 };
             }
 
-            var registryFile = await WriteBridgeFileAsync(
-                _fileSystem.CombinePath(bridgeDir, "bridge-registry.ts"),
-                "bridge/bridge-registry.ts",
-                _templateEngine.GenerateBridgeRegistry(),
+            var registryFile = await WriteMockFileAsync(
+                _fileSystem.CombinePath(interfaceMocksDir, "interface-mock-registry.ts"),
+                "interface-mocks/interface-mock-registry.ts",
+                _templateEngine.GenerateInterfaceMockRegistry(),
                 cancellationToken).ConfigureAwait(false);
             generatedFiles.Add(registryFile);
 
-            var providersFile = await WriteBridgeFileAsync(
-                _fileSystem.CombinePath(bridgeDir, "bridge-providers.ts"),
-                "bridge/bridge-providers.ts",
-                _templateEngine.GenerateBridgeProviders(resolved),
+            var providersFile = await WriteMockFileAsync(
+                _fileSystem.CombinePath(interfaceMocksDir, "interface-mock-providers.ts"),
+                "interface-mocks/interface-mock-providers.ts",
+                _templateEngine.GenerateInterfaceMockProviders(resolved),
                 cancellationToken).ConfigureAwait(false);
             generatedFiles.Add(providersFile);
 
-            var clientFile = await WriteBridgeFileAsync(
-                _fileSystem.CombinePath(bridgeDir, "playwright-bridge.ts"),
-                "bridge/playwright-bridge.ts",
-                _templateEngine.GeneratePlaywrightBridge(resolved),
+            var clientFile = await WriteMockFileAsync(
+                _fileSystem.CombinePath(interfaceMocksDir, "playwright-interface-mocks.ts"),
+                "interface-mocks/playwright-interface-mocks.ts",
+                _templateEngine.GeneratePlaywrightInterfaceMocks(resolved),
                 cancellationToken).ConfigureAwait(false);
             generatedFiles.Add(clientFile);
 
@@ -583,9 +583,9 @@ public sealed class CodeGenerator : ICodeGenerator
                 try
                 {
                     var fileName = $"{token.MockFileStem}.ts";
-                    var mockFile = await WriteBridgeFileAsync(
+                    var mockFile = await WriteMockFileAsync(
                         _fileSystem.CombinePath(mocksDir, fileName),
-                        $"bridge/mocks/{fileName}",
+                        $"interface-mocks/mocks/{fileName}",
                         _templateEngine.GenerateInterfaceMock(token),
                         cancellationToken).ConfigureAwait(false);
                     generatedFiles.Add(mockFile);
@@ -601,12 +601,12 @@ public sealed class CodeGenerator : ICodeGenerator
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to generate Playwright bridge");
-            return GenerationResult.Failed($"Failed to generate bridge: {ex.Message}");
+            _logger.LogError(ex, "Failed to generate interface mocks");
+            return GenerationResult.Failed($"Failed to generate interface mocks: {ex.Message}");
         }
     }
 
-    private async Task<GeneratedFile> WriteBridgeFileAsync(
+    private async Task<GeneratedFile> WriteMockFileAsync(
         string filePath,
         string relativePath,
         string content,
@@ -618,12 +618,12 @@ public sealed class CodeGenerator : ICodeGenerator
         {
             RelativePath = relativePath,
             AbsolutePath = filePath,
-            FileType = GeneratedFileType.Bridge,
+            FileType = GeneratedFileType.InterfaceMock,
             Content = content
         };
     }
 
-    private static InjectionTokenInterface EnrichBridgeInterface(InjectionTokenInterface token, string bridgeDir, string mocksDir)
+    private static InjectionTokenInterface EnrichInterface(InjectionTokenInterface token, string interfaceMocksDir, string mocksDir)
     {
         var stripped = StripInterfacePrefix(token.InterfaceName);
         return token with
@@ -631,7 +631,7 @@ public sealed class CodeGenerator : ICodeGenerator
             MockClassName = stripped + "Mock",
             MockFileStem = ToKebabCase(stripped) + ".mock",
             PlaywrightAccessor = ToCamelCase(stripped),
-            TokenImportPath = ToRelativeImport(bridgeDir, token.TokenFilePath),
+            TokenImportPath = ToRelativeImport(interfaceMocksDir, token.TokenFilePath),
             InterfaceImportPath = token.InterfaceFilePath is null ? null : ToRelativeImport(mocksDir, token.InterfaceFilePath)
         };
     }

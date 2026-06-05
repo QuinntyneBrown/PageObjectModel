@@ -105,11 +105,11 @@ public interface ITemplateEngine
     string GenerateComponentObjectTestSpec(AngularComponentInfo component);
 
     /// <summary>
-    /// Generates the bridge registry runtime: the call recorder, stub store, observable subjects,
-    /// and the <c>window.__e2eBridge</c> control API used by Playwright.
+    /// Generates the interface-mock registry runtime: the call recorder, stub store, observable
+    /// subjects, and the <c>window.__interfaceMocks</c> control API used by Playwright.
     /// </summary>
     /// <returns>The generated TypeScript code.</returns>
-    string GenerateBridgeRegistry();
+    string GenerateInterfaceMockRegistry();
 
     /// <summary>
     /// Generates a recording mock class for an injection-token-backed service interface.
@@ -119,18 +119,18 @@ public interface ITemplateEngine
     string GenerateInterfaceMock(InjectionTokenInterface interfaceInfo);
 
     /// <summary>
-    /// Generates the Angular providers (<c>provideE2EBridge()</c>) that install the bridge and wire
-    /// each token to its mock.
+    /// Generates the Angular providers (<c>provideInterfaceMocks()</c>) that install the interface
+    /// mocks and wire each token to its mock.
     /// </summary>
     /// <param name="interfaces">The injection-token interfaces to wire.</param>
     /// <returns>The generated TypeScript code.</returns>
-    string GenerateBridgeProviders(IReadOnlyList<InjectionTokenInterface> interfaces);
+    string GenerateInterfaceMockProviders(IReadOnlyList<InjectionTokenInterface> interfaces);
 
     /// <summary>
-    /// Generates the Playwright-side typed client (<c>PlaywrightBridge</c>) that talks to the window
-    /// bridge via <c>page.evaluate</c>.
+    /// Generates the Playwright-side typed client (<c>InterfaceMocks</c>) that talks to the window
+    /// control API via <c>page.evaluate</c>.
     /// </summary>
     /// <param name="interfaces">The injection-token interfaces to expose.</param>
     /// <returns>The generated TypeScript code.</returns>
-    string GeneratePlaywrightBridge(IReadOnlyList<InjectionTokenInterface> interfaces);
+    string GeneratePlaywrightInterfaceMocks(IReadOnlyList<InjectionTokenInterface> interfaces);
 }

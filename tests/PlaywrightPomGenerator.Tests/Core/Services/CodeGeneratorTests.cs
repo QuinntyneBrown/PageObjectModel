@@ -40,10 +40,10 @@ public sealed class CodeGeneratorTests
         _templateEngine.GenerateBaseComponent().Returns("// base component");
         _templateEngine.GenerateComponentObject(Arg.Any<AngularComponentInfo>()).Returns("// component object");
         _templateEngine.GenerateComponentObjectTestSpec(Arg.Any<AngularComponentInfo>()).Returns("// component spec");
-        _templateEngine.GenerateBridgeRegistry().Returns("// registry");
+        _templateEngine.GenerateInterfaceMockRegistry().Returns("// registry");
         _templateEngine.GenerateInterfaceMock(Arg.Any<InjectionTokenInterface>()).Returns("// mock");
-        _templateEngine.GenerateBridgeProviders(Arg.Any<IReadOnlyList<InjectionTokenInterface>>()).Returns("// providers");
-        _templateEngine.GeneratePlaywrightBridge(Arg.Any<IReadOnlyList<InjectionTokenInterface>>()).Returns("// client");
+        _templateEngine.GenerateInterfaceMockProviders(Arg.Any<IReadOnlyList<InjectionTokenInterface>>()).Returns("// providers");
+        _templateEngine.GeneratePlaywrightInterfaceMocks(Arg.Any<IReadOnlyList<InjectionTokenInterface>>()).Returns("// client");
 
         _generator = new CodeGenerator(_analyzer, _templateEngine, _fileSystem, _logger, optionsWrapper);
     }
@@ -406,39 +406,39 @@ public sealed class CodeGeneratorTests
     // ---------------------------------------------------------------------
 
     [Fact]
-    public async Task GenerateBridgeAsync_ShouldGenerateRegistryProvidersClientAndMocks()
+    public async Task GenerateInterfaceMocksAsync_ShouldGenerateRegistryProvidersClientAndMocks()
     {
         // Arrange
         var interfaces = new[] { CreateBridgeInterface() };
 
         // Act
-        var result = await _generator.GenerateBridgeAsync(interfaces, "/output");
+        var result = await _generator.GenerateInterfaceMocksAsync(interfaces, "/output");
 
         // Assert
         result.Success.Should().BeTrue();
-        result.GeneratedFiles.Should().OnlyContain(f => f.FileType == GeneratedFileType.Bridge);
-        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "bridge/bridge-registry.ts");
-        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "bridge/bridge-providers.ts");
-        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "bridge/playwright-bridge.ts");
-        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "bridge/mocks/local-storage.mock.ts");
+        result.GeneratedFiles.Should().OnlyContain(f => f.FileType == GeneratedFileType.InterfaceMock);
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "interface-mocks/interface-mock-registry.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "interface-mocks/interface-mock-providers.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "interface-mocks/playwright-interface-mocks.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "interface-mocks/mocks/local-storage.mock.ts");
     }
 
     [Fact]
-    public async Task GenerateBridgeAsync_ShouldCreateBridgeAndMocksDirectories()
+    public async Task GenerateInterfaceMocksAsync_ShouldCreateBridgeAndMocksDirectories()
     {
         // Arrange
         var interfaces = new[] { CreateBridgeInterface() };
 
         // Act
-        await _generator.GenerateBridgeAsync(interfaces, "/output");
+        await _generator.GenerateInterfaceMocksAsync(interfaces, "/output");
 
         // Assert
-        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("bridge"));
+        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("interface-mocks"));
         _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("mocks"));
     }
 
     [Fact]
-    public async Task GenerateBridgeAsync_WithUnresolvedInterface_ShouldWarnAndSkip()
+    public async Task GenerateInterfaceMocksAsync_WithUnresolvedInterface_ShouldWarnAndSkip()
     {
         // Arrange - one resolved, one with no interface file
         var interfaces = new[]
@@ -448,23 +448,23 @@ public sealed class CodeGeneratorTests
         };
 
         // Act
-        var result = await _generator.GenerateBridgeAsync(interfaces, "/output");
+        var result = await _generator.GenerateInterfaceMocksAsync(interfaces, "/output");
 
         // Assert
         result.Success.Should().BeTrue();
         result.Warnings.Should().Contain(w => w.Contains("IMissing") && w.Contains("could not be resolved"));
-        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "bridge/mocks/local-storage.mock.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "interface-mocks/mocks/local-storage.mock.ts");
         result.GeneratedFiles.Should().NotContain(f => f.RelativePath.Contains("missing"));
     }
 
     [Fact]
-    public async Task GenerateBridgeAsync_WithAllUnresolved_ShouldFail()
+    public async Task GenerateInterfaceMocksAsync_WithAllUnresolved_ShouldFail()
     {
         // Arrange
         var interfaces = new[] { CreateBridgeInterface("IMissing", "MISSING", interfaceFile: null) };
 
         // Act
-        var result = await _generator.GenerateBridgeAsync(interfaces, "/output");
+        var result = await _generator.GenerateInterfaceMocksAsync(interfaces, "/output");
 
         // Assert
         result.Success.Should().BeFalse();
@@ -472,16 +472,16 @@ public sealed class CodeGeneratorTests
     }
 
     [Fact]
-    public async Task GenerateBridgeAsync_WithNullInterfaces_ShouldThrowArgumentNullException()
+    public async Task GenerateInterfaceMocksAsync_WithNullInterfaces_ShouldThrowArgumentNullException()
     {
-        var act = () => _generator.GenerateBridgeAsync(null!, "/output");
+        var act = () => _generator.GenerateInterfaceMocksAsync(null!, "/output");
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
     [Fact]
-    public async Task GenerateBridgeAsync_WithNullOutput_ShouldThrowArgumentNullException()
+    public async Task GenerateInterfaceMocksAsync_WithNullOutput_ShouldThrowArgumentNullException()
     {
-        var act = () => _generator.GenerateBridgeAsync(new[] { CreateBridgeInterface() }, null!);
+        var act = () => _generator.GenerateInterfaceMocksAsync(new[] { CreateBridgeInterface() }, null!);
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
