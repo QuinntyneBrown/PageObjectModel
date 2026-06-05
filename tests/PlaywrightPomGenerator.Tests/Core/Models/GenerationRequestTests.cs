@@ -18,6 +18,21 @@ public sealed class GenerationRequestTests
         request.GenerateSelectors.Should().BeTrue();
         request.GeneratePageObjects.Should().BeTrue();
         request.GenerateHelpers.Should().BeTrue();
+        request.GenerateComponentObjects.Should().BeTrue();
+        request.HasAnyGenerationOption.Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasAnyGenerationOption_WhenOnlyComponentObjectsSet_ShouldReturnTrue()
+    {
+        // Arrange
+        var request = new GenerationRequest
+        {
+            TargetPath = "/path",
+            GenerateComponentObjects = true
+        };
+
+        // Assert
         request.HasAnyGenerationOption.Should().BeTrue();
     }
 

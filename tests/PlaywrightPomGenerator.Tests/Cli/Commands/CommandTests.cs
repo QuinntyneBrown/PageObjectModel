@@ -83,7 +83,53 @@ public sealed class CommandTests
         command.SelectorsOption.Should().NotBeNull();
         command.PageObjectsOption.Should().NotBeNull();
         command.HelpersOption.Should().NotBeNull();
+        command.ComponentObjectsOption.Should().NotBeNull();
         command.AllOption.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void GenerateArtifactsCommand_ComponentObjectsOption_ShouldHaveCorrectName()
+    {
+        // Act
+        var command = new GenerateArtifactsCommand();
+
+        // Assert
+        command.ComponentObjectsOption.Name.Should().Be("component-objects");
+    }
+
+    [Fact]
+    public void GenerateComponentCommand_ShouldHaveCorrectNameAndDescription()
+    {
+        // Act
+        var command = new GenerateComponentCommand();
+
+        // Assert
+        command.Name.Should().Be("component");
+        command.Description.Should().Contain("Component Object");
+    }
+
+    [Fact]
+    public void GenerateComponentCommand_ShouldHaveRequiredArguments()
+    {
+        // Act
+        var command = new GenerateComponentCommand();
+
+        // Assert
+        command.PathArgument.Should().NotBeNull();
+        command.PathArgument.Name.Should().Be("path");
+    }
+
+    [Fact]
+    public void GenerateComponentCommand_ShouldHaveOutputAndExcludeRoutableOptions()
+    {
+        // Act
+        var command = new GenerateComponentCommand();
+
+        // Assert
+        command.OutputOption.Should().NotBeNull();
+        command.OutputOption.Name.Should().Be("output");
+        command.ExcludeRoutableOption.Should().NotBeNull();
+        command.ExcludeRoutableOption.Name.Should().Be("exclude-routable");
     }
 
     [Fact]

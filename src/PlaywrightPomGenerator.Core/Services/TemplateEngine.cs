@@ -125,7 +125,7 @@ public sealed class TemplateEngine : ITemplateEngine
 
         foreach (var selector in component.Selectors)
         {
-            var locatorMethod = GetLocatorMethod(selector);
+            var locatorMethod = GetLocatorMethod(selector, "page");
             sb.AppendLine($"    this.{ToCamelCase(selector.PropertyName)} = {locatorMethod};");
         }
 
@@ -154,8 +154,8 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("  }");
         sb.AppendLine();
 
-        // Generate action methods for common element types
-        GenerateActionMethods(sb, component.Selectors);
+        // Generate action methods for common element types (rooted on the page)
+        GenerateActionMethods(sb, component.Selectors, "this.page");
 
         // Wait for load method (implements abstract method from BasePage)
         if (_options.GenerateJsDocComments)
@@ -170,6 +170,262 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("  }");
 
         sb.AppendLine("}");
+
+        return sb.ToString();
+    }
+
+    /// <inheritdoc />
+    public string GenerateComponentObject(AngularComponentInfo component)
+    {
+        ArgumentNullException.ThrowIfNull(component);
+
+        var sb = new StringBuilder();
+        var className = GetComponentObjectClassName(component.Name);
+        var fileName = $"{ToKebabCase(component.Name)}.component.ts";
+
+        var header = GenerateFileHeader(fileName);
+        if (!string.IsNullOrEmpty(header))
+        {
+            sb.AppendLine(header);
+            sb.AppendLine();
+        }
+
+        // Include template content as comment in debug mode
+        if (_options.DebugMode && !string.IsNullOrEmpty(component.TemplateContent))
+        {
+            sb.AppendLine("/*");
+            sb.AppendLine(" * DEBUG: HTML Template Content");
+            sb.AppendLine(" * =============================");
+            foreach (var line in component.TemplateContent.Split('\n'))
+            {
+                sb.AppendLine($" * {line.TrimEnd('\r')}");
+            }
+            sb.AppendLine(" */");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("import { Locator, expect } from '@playwright/test';");
+        sb.AppendLine("import { BaseComponent } from './base.component';");
+        sb.AppendLine();
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("/**");
+            sb.AppendLine($" * Component Object for the {component.Name} component.");
+            sb.AppendLine($" * Host selector: {component.Selector}");
+            sb.AppendLine(" */");
+        }
+
+        sb.AppendLine($"export class {className} extends BaseComponent {{");
+
+        // Static host selector so callers/factories can build the root locator.
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /** Host element selector. Use to build the root locator from a Page or parent. */");
+        }
+        sb.AppendLine($"  static readonly hostSelector = '{component.Selector}';");
+        sb.AppendLine();
+
+        // Generate selector properties (initialized from this.root in the constructor).
+        foreach (var selector in component.Selectors)
+        {
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("  /**");
+                sb.AppendLine($"   * Locator for the {selector.PropertyName} element.");
+                sb.AppendLine($"   * Element type: {selector.ElementType}");
+                sb.AppendLine($"   * Strategy: {selector.Strategy}");
+                sb.AppendLine("   */");
+            }
+            sb.AppendLine($"  readonly {ToCamelCase(selector.PropertyName)}: Locator;");
+        }
+
+        if (component.Selectors.Count > 0)
+        {
+            sb.AppendLine();
+        }
+
+        // Constructor (root Locator, not Page).
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /**");
+            sb.AppendLine($"   * Creates a new instance of {className}.");
+            sb.AppendLine("   * @param root - The root locator scoping this component (its host element).");
+            sb.AppendLine("   */");
+        }
+        sb.AppendLine("  constructor(root: Locator) {");
+        sb.AppendLine("    super(root);");
+
+        foreach (var selector in component.Selectors)
+        {
+            var locatorMethod = GetLocatorMethod(selector, "this.root");
+            sb.AppendLine($"    this.{ToCamelCase(selector.PropertyName)} = {locatorMethod};");
+        }
+
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        // Action + assertion methods, all rooted on this.root. No navigate() — composition only.
+        GenerateActionMethods(sb, component.Selectors, "this.root");
+
+        sb.AppendLine("}");
+
+        return sb.ToString();
+    }
+
+    /// <inheritdoc />
+    public string GenerateBaseComponent()
+    {
+        var sb = new StringBuilder();
+        var fileName = "base.component.ts";
+
+        var header = GenerateFileHeader(fileName);
+        if (!string.IsNullOrEmpty(header))
+        {
+            sb.AppendLine(header);
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("import { Locator, expect } from '@playwright/test';");
+        sb.AppendLine();
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("/** Abstract base class for all component objects. Scoped to a root Locator, not a Page. */");
+        }
+        sb.AppendLine("export abstract class BaseComponent {");
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /** The root locator this component is scoped to. */");
+        }
+        sb.AppendLine("  protected readonly root: Locator;");
+        sb.AppendLine();
+
+        sb.AppendLine("  constructor(root: Locator) {");
+        sb.AppendLine("    this.root = root;");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /** The root locator for this component instance. */");
+        }
+        sb.AppendLine("  getRoot(): Locator {");
+        sb.AppendLine("    return this.root;");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /** Asserts the component's root is visible. */");
+        }
+        sb.AppendLine("  async expectVisible(): Promise<void> {");
+        sb.AppendLine("    await expect(this.root).toBeVisible();");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /** Asserts the component's root is hidden/detached. */");
+        }
+        sb.AppendLine("  async expectHidden(): Promise<void> {");
+        sb.AppendLine("    await expect(this.root).toBeHidden();");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /** Returns whether the component's root is currently visible. */");
+        }
+        sb.AppendLine("  async isVisible(): Promise<boolean> {");
+        sb.AppendLine("    return this.root.isVisible();");
+        sb.AppendLine("  }");
+        sb.AppendLine();
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("  /** Scoped test-id lookup within this component. */");
+        }
+        sb.AppendLine("  protected getByTestId(testId: string): Locator {");
+        sb.AppendLine("    return this.root.getByTestId(testId);");
+        sb.AppendLine("  }");
+
+        sb.AppendLine("}");
+
+        return sb.ToString();
+    }
+
+    /// <inheritdoc />
+    public string GenerateComponentObjectTestSpec(AngularComponentInfo component)
+    {
+        ArgumentNullException.ThrowIfNull(component);
+
+        var sb = new StringBuilder();
+        var className = GetComponentObjectClassName(component.Name);
+        var kebab = ToKebabCase(component.Name);
+        var fileName = $"{kebab}.component.{_options.TestFileSuffix}.ts";
+
+        var header = GenerateFileHeader(fileName);
+        if (!string.IsNullOrEmpty(header))
+        {
+            sb.AppendLine(header);
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("import { test, expect } from '@playwright/test';");
+        sb.AppendLine($"import {{ {className} }} from '../component-objects/{kebab}.component';");
+        sb.AppendLine();
+
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine("/**");
+            sb.AppendLine($" * Component-object tests for the {component.Name} component.");
+            sb.AppendLine(" * Unlike page specs, these compose the component object from its host page.");
+            sb.AppendLine(" */");
+        }
+
+        // Host page URL is best-effort: the analyzer does not resolve a component's parent page,
+        // so this is emitted as a TODO placeholder for the author to fill in.
+        if (_options.GenerateJsDocComments)
+        {
+            sb.AppendLine($"/** URL of the page that renders <{component.Selector}>. TODO: replace with the real host page URL. */");
+        }
+        sb.AppendLine("const HOST_PAGE_URL = '/';");
+        sb.AppendLine();
+
+        sb.AppendLine($"test.describe('{className}', () => {{");
+        sb.AppendLine();
+
+        sb.AppendLine("  test('should render the component', async ({ page }) => {");
+        sb.AppendLine("    await page.goto(HOST_PAGE_URL);");
+        sb.AppendLine($"    const component = new {className}(");
+        sb.AppendLine($"      page.locator({className}.hostSelector).first(),");
+        sb.AppendLine("    );");
+        sb.AppendLine("    await component.expectVisible();");
+        sb.AppendLine("  });");
+
+        // Scaffold one or two assertions from generated expect* helpers.
+        var assertable = component.Selectors
+            .Where(ProducesVisibilityAssertion)
+            .Take(2)
+            .ToList();
+
+        foreach (var selector in assertable)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"  test('{selector.PropertyName} should be visible', async ({{ page }}) => {{");
+            sb.AppendLine("    await page.goto(HOST_PAGE_URL);");
+            sb.AppendLine($"    const component = new {className}(");
+            sb.AppendLine($"      page.locator({className}.hostSelector).first(),");
+            sb.AppendLine("    );");
+            sb.AppendLine($"    await component.expect{selector.PropertyName}Visible();");
+            sb.AppendLine("  });");
+        }
+
+        // `expect` is re-exported for convenience and parity with page specs; it may be unused
+        // until the author adds raw assertions.
+        sb.AppendLine("});");
 
         return sb.ToString();
     }
@@ -1135,7 +1391,7 @@ public sealed class TemplateEngine : ITemplateEngine
         return sb.ToString();
     }
 
-    private void GenerateActionMethods(StringBuilder sb, IReadOnlyList<ElementSelector> selectors)
+    private void GenerateActionMethods(StringBuilder sb, IReadOnlyList<ElementSelector> selectors, string rootExpression)
     {
         var buttons = selectors.Where(s => s.ElementType is "button" or "mat-button").ToList();
         var inputs = selectors.Where(s => s.ElementType is "input" or "textarea" or "mat-form-field").ToList();
@@ -1338,7 +1594,7 @@ public sealed class TemplateEngine : ITemplateEngine
             }
             var cellSelector = isMaterial ? "mat-cell, td[mat-cell], [mat-cell]" : "td";
             sb.AppendLine($"  get{table.PropertyName}Column(columnIndex: number): Locator {{");
-            sb.AppendLine($"    return this.{tableProp}.locator('{cellSelector}').filter({{ has: this.page.locator(`:nth-child(${{columnIndex + 1}})`) }});");
+            sb.AppendLine($"    return this.{tableProp}.locator('{cellSelector}').filter({{ has: {rootExpression}.locator(`:nth-child(${{columnIndex + 1}})`) }});");
             sb.AppendLine("  }");
             sb.AppendLine();
 
@@ -1423,32 +1679,36 @@ public sealed class TemplateEngine : ITemplateEngine
         }
     }
 
-    private static string GetLocatorMethod(ElementSelector selector)
+    /// <summary>
+    /// Builds the locator initializer expression for a selector, rooted on the supplied base
+    /// expression (<c>"page"</c> for page objects, <c>"this.root"</c> for component objects).
+    /// </summary>
+    private static string GetLocatorMethod(ElementSelector selector, string baseExpression)
     {
         return selector.Strategy switch
         {
-            SelectorStrategy.TestId => $"page.getByTestId('{EscapeForJsString(selector.SelectorValue.Replace("[data-testid='", "").Replace("']", ""))}')",
-            SelectorStrategy.Id => $"page.locator('{EscapeForJsString(selector.SelectorValue)}')",
+            SelectorStrategy.TestId => $"{baseExpression}.getByTestId('{EscapeForJsString(selector.SelectorValue.Replace("[data-testid='", "").Replace("']", ""))}')",
+            SelectorStrategy.Id => $"{baseExpression}.locator('{EscapeForJsString(selector.SelectorValue)}')",
             SelectorStrategy.Role when selector.ElementType == "button" && !string.IsNullOrEmpty(selector.TextContent)
-                => $"page.getByRole('button', {{ name: '{EscapeForJsString(selector.TextContent)}' }})",
+                => $"{baseExpression}.getByRole('button', {{ name: '{EscapeForJsString(selector.TextContent)}' }})",
             SelectorStrategy.Role when selector.ElementType == "button"
-                => "page.locator('button')",
+                => $"{baseExpression}.locator('button')",
             SelectorStrategy.Text when !string.IsNullOrEmpty(selector.TextContent)
-                => $"page.getByText('{EscapeForJsString(selector.TextContent)}')",
-            SelectorStrategy.Placeholder => $"page.getByPlaceholder('{EscapeForJsString(selector.TextContent ?? "")}')",
-            SelectorStrategy.Label => $"page.getByLabel('{EscapeForJsString(selector.TextContent ?? "")}')",
-            _ => FormatLocatorWithQuotes(selector.SelectorValue)
+                => $"{baseExpression}.getByText('{EscapeForJsString(selector.TextContent)}')",
+            SelectorStrategy.Placeholder => $"{baseExpression}.getByPlaceholder('{EscapeForJsString(selector.TextContent ?? "")}')",
+            SelectorStrategy.Label => $"{baseExpression}.getByLabel('{EscapeForJsString(selector.TextContent ?? "")}')",
+            _ => FormatLocatorWithQuotes(selector.SelectorValue, baseExpression)
         };
     }
 
-    private static string FormatLocatorWithQuotes(string selectorValue)
+    private static string FormatLocatorWithQuotes(string selectorValue, string baseExpression)
     {
         // If the selector contains single quotes, wrap in double quotes
         if (selectorValue.Contains('\''))
         {
-            return $"page.locator(\"{selectorValue}\")";
+            return $"{baseExpression}.locator(\"{selectorValue}\")";
         }
-        return $"page.locator('{selectorValue}')";
+        return $"{baseExpression}.locator('{selectorValue}')";
     }
 
     private static string EscapeForJsString(string value)
@@ -1462,6 +1722,31 @@ public sealed class TemplateEngine : ITemplateEngine
             ? componentName[..^"Component".Length]
             : componentName;
         return name;
+    }
+
+    /// <summary>
+    /// Maps an Angular component class name to its component-object class name
+    /// (e.g. <c>KpiCardComponent</c> → <c>KpiCardComponentObject</c>), paralleling how
+    /// <see cref="GetPageObjectClassName"/> maps page components.
+    /// </summary>
+    private static string GetComponentObjectClassName(string componentName)
+    {
+        var name = componentName.EndsWith("Component", StringComparison.Ordinal)
+            ? componentName[..^"Component".Length]
+            : componentName;
+        return name + "ComponentObject";
+    }
+
+    /// <summary>
+    /// Determines whether a selector yields an <c>expect{Name}Visible</c> assertion helper in
+    /// <see cref="GenerateActionMethods"/>. Used to scaffold sample assertions in component specs.
+    /// </summary>
+    private static bool ProducesVisibilityAssertion(ElementSelector selector)
+    {
+        return selector.ElementType is "button" or "mat-button"
+            || !string.IsNullOrEmpty(selector.TextContent)
+            || (selector.IsTextElement && string.IsNullOrEmpty(selector.TextContent))
+            || selector.IsTable;
     }
 
     private static string ToCamelCase(string input)

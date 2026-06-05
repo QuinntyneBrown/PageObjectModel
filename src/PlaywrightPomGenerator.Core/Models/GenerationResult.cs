@@ -126,5 +126,10 @@ public enum GeneratedFileType
     /// <summary>
     /// SignalR mock file.
     /// </summary>
-    SignalRMock
+    SignalRMock,
+
+    /// <summary>
+    /// Component object file (root-Locator-scoped, for composition inside pages).
+    /// </summary>
+    ComponentObject
 }

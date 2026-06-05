@@ -125,10 +125,11 @@ public static class Program
             var selectors = context.ParseResult.GetValueForOption(artifactsCommand.SelectorsOption);
             var pageObjects = context.ParseResult.GetValueForOption(artifactsCommand.PageObjectsOption);
             var helpers = context.ParseResult.GetValueForOption(artifactsCommand.HelpersOption);
+            var componentObjects = context.ParseResult.GetValueForOption(artifactsCommand.ComponentObjectsOption);
             var all = context.ParseResult.GetValueForOption(artifactsCommand.AllOption);
             var handler = services.GetRequiredService<GenerateArtifactsCommandHandler>();
             context.ExitCode = await handler.ExecuteAsync(
-                path, output, project, fixtures, configs, selectors, pageObjects, helpers, all, context.GetCancellationToken())
+                path, output, project, fixtures, configs, selectors, pageObjects, helpers, componentObjects, all, context.GetCancellationToken())
                 .ConfigureAwait(false);
         });
 
@@ -139,6 +140,16 @@ public static class Program
             var output = context.ParseResult.GetValueForOption(libraryCommand.OutputOption);
             var handler = services.GetRequiredService<GenerateLibraryCommandHandler>();
             context.ExitCode = await handler.ExecuteAsync(path, output, context.GetCancellationToken()).ConfigureAwait(false);
+        });
+
+        var componentCommand = new GenerateComponentCommand();
+        componentCommand.SetHandler(async (context) =>
+        {
+            var path = context.ParseResult.GetValueForArgument(componentCommand.PathArgument);
+            var output = context.ParseResult.GetValueForOption(componentCommand.OutputOption);
+            var excludeRoutable = context.ParseResult.GetValueForOption(componentCommand.ExcludeRoutableOption);
+            var handler = services.GetRequiredService<GenerateComponentCommandHandler>();
+            context.ExitCode = await handler.ExecuteAsync(path, output, excludeRoutable, context.GetCancellationToken()).ConfigureAwait(false);
         });
 
         var signalRMockCommand = new GenerateSignalRMockCommand();
@@ -163,6 +174,7 @@ public static class Program
             appCommand,
             workspaceCommand,
             libraryCommand,
+            componentCommand,
             artifactsCommand,
             signalRMockCommand,
             remoteCommand
@@ -225,6 +237,7 @@ public static class Program
         services.AddTransient<GenerateAppCommandHandler>();
         services.AddTransient<GenerateWorkspaceCommandHandler>();
         services.AddTransient<GenerateLibraryCommandHandler>();
+        services.AddTransient<GenerateComponentCommandHandler>();
         services.AddTransient<GenerateArtifactsCommandHandler>();
         services.AddTransient<GenerateSignalRMockCommandHandler>();
         services.AddTransient<GenerateRemoteCommandHandler>();

@@ -79,4 +79,28 @@ public interface ITemplateEngine
     /// </summary>
     /// <returns>The generated TypeScript code.</returns>
     string GenerateBasePage();
+
+    /// <summary>
+    /// Generates a component object class for a component. Unlike a page object, a component object
+    /// is scoped to a root <c>Locator</c> (the component host element) rather than to a <c>Page</c>,
+    /// so it works wherever — and however many times — the component renders.
+    /// </summary>
+    /// <param name="component">The component information.</param>
+    /// <returns>The generated TypeScript code.</returns>
+    string GenerateComponentObject(AngularComponentInfo component);
+
+    /// <summary>
+    /// Generates the abstract base component class that all component objects extend from.
+    /// It is the root-scoped analog of the base page and declares no <c>navigate()</c>.
+    /// </summary>
+    /// <returns>The generated TypeScript code.</returns>
+    string GenerateBaseComponent();
+
+    /// <summary>
+    /// Generates a test specification file for a component object. The spec composes the component
+    /// object from its host page rather than navigating to it directly.
+    /// </summary>
+    /// <param name="component">The component information.</param>
+    /// <returns>The generated TypeScript code.</returns>
+    string GenerateComponentObjectTestSpec(AngularComponentInfo component);
 }

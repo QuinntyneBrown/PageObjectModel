@@ -25,7 +25,7 @@ public sealed class GenerateArtifactsCommandHandlerTests
     {
         // Act
         var result = await _handler.ExecuteAsync(
-            "/path", null, null, false, false, false, false, false, false, CancellationToken.None);
+            "/path", null, null, false, false, false, false, false, false, false, CancellationToken.None);
 
         // Assert
         result.Should().Be(1);
@@ -40,7 +40,7 @@ public sealed class GenerateArtifactsCommandHandlerTests
 
         // Act
         await _handler.ExecuteAsync(
-            "/path", null, null, false, false, false, false, false, true, CancellationToken.None);
+            "/path", null, null, false, false, false, false, false, false, true, CancellationToken.None);
 
         // Assert
         await _generator.Received(1).GenerateArtifactsAsync(
@@ -49,7 +49,8 @@ public sealed class GenerateArtifactsCommandHandlerTests
                 r.GenerateConfigs &&
                 r.GenerateSelectors &&
                 r.GeneratePageObjects &&
-                r.GenerateHelpers),
+                r.GenerateHelpers &&
+                r.GenerateComponentObjects),
             Arg.Any<CancellationToken>());
     }
 
@@ -63,7 +64,7 @@ public sealed class GenerateArtifactsCommandHandlerTests
         // Act
         await _handler.ExecuteAsync(
             "/path", "/output", "myproject",
-            fixtures: true, configs: false, selectors: true, pageObjects: false, helpers: false, all: false,
+            fixtures: true, configs: false, selectors: true, pageObjects: false, helpers: false, componentObjects: false, all: false,
             CancellationToken.None);
 
         // Assert
@@ -76,7 +77,8 @@ public sealed class GenerateArtifactsCommandHandlerTests
                 !r.GenerateConfigs &&
                 r.GenerateSelectors &&
                 !r.GeneratePageObjects &&
-                !r.GenerateHelpers),
+                !r.GenerateHelpers &&
+                !r.GenerateComponentObjects),
             Arg.Any<CancellationToken>());
     }
 
@@ -97,7 +99,7 @@ public sealed class GenerateArtifactsCommandHandlerTests
 
         // Act
         var result = await _handler.ExecuteAsync(
-            "/path", null, null, true, false, false, false, false, false, CancellationToken.None);
+            "/path", null, null, true, false, false, false, false, false, false, CancellationToken.None);
 
         // Assert
         result.Should().Be(0);
@@ -112,7 +114,7 @@ public sealed class GenerateArtifactsCommandHandlerTests
 
         // Act
         var result = await _handler.ExecuteAsync(
-            "/path", null, null, true, false, false, false, false, false, CancellationToken.None);
+            "/path", null, null, true, false, false, false, false, false, false, CancellationToken.None);
 
         // Assert
         result.Should().Be(1);
@@ -123,7 +125,7 @@ public sealed class GenerateArtifactsCommandHandlerTests
     {
         // Act
         var act = () => _handler.ExecuteAsync(
-            null!, null, null, true, false, false, false, false, false, CancellationToken.None);
+            null!, null, null, true, false, false, false, false, false, false, CancellationToken.None);
 
         // Assert
         await act.Should().ThrowAsync<ArgumentNullException>();

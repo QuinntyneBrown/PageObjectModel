@@ -11,6 +11,7 @@ A powerful .NET CLI tool that automatically generates Playwright Page Object Mod
 - **Automatic Angular Analysis** - Intelligently scans Angular workspaces, applications, and libraries to detect components, templates, and routing
 - **BasePage Pattern** - All generated page objects extend from a common BasePage class with shared functionality
 - **Page Object Generation** - Creates type-safe TypeScript page objects with properly typed locators and methods
+- **Component Object Generation** - Creates root-`Locator`-scoped component objects (`ppg component`) for non-routable components, so dashboard-style apps can be verified component-by-component and composed inside pages
 - **Inline Template Support** - Parses both external HTML templates and inline templates in component files
 - **Angular Material Support** - Detects and creates selectors for mat-button, mat-table, mat-form-field, and other Material components
 - **Click Handler Detection** - Automatically generates click methods for elements with `(click)` event bindings
@@ -102,6 +103,30 @@ ppg lib ./projects/my-lib
 ppg lib ./projects/components -o ./e2e
 ```
 
+### `component` - Generate Component Objects
+
+Generates **Component Objects**: classes scoped to a root `Locator` (the component host element)
+rather than to a `Page`. Use this for non-routable components — cards, panels, widgets — so a
+dashboard-style app (one route, many components) can be verified component-by-component. A component
+object works wherever, and however many times, the component renders.
+
+```bash
+ppg component <path> [options]
+
+# Examples
+ppg component ./src/app/dashboard
+ppg component ./src/app -o ./e2e
+ppg component ./src/app --exclude-routable
+```
+
+**Options:**
+- `-o, --output` - Output directory for generated files
+- `--exclude-routable` - Skip components that are routable pages (default: generate a component
+  object for every component discovered at the path)
+
+The path may be an application, a library, or an arbitrary component/feature folder. See
+[Generated Component Objects](#generated-component-objects) for the output shape.
+
 ### `artifacts` - Generate Specific Artifacts
 
 ```bash
@@ -111,6 +136,7 @@ ppg artifacts <path> [options]
 ppg artifacts . --all
 ppg artifacts . --fixtures --configs
 ppg artifacts . --page-objects --selectors
+ppg artifacts . --component-objects
 ```
 
 **Options:**
@@ -119,6 +145,7 @@ ppg artifacts . --page-objects --selectors
 - `-s, --selectors` - Generate selector files
 - `--page-objects` - Generate page object files
 - `--helpers` - Generate helper utilities
+- `--component-objects` - Generate component objects (root-scoped, for composition inside pages)
 - `-a, --all` - Generate all artifacts
 
 ### `remote` - Generate from Remote Git URL
@@ -213,6 +240,11 @@ e2e/
 │   ├── dashboard.page.ts
 │   └── ...
 │
+├── component-objects/          # Component Object Model classes (ppg component)
+│   ├── base.component.ts       # Abstract base class for all component objects
+│   ├── kpi-card.component.ts   # Root-Locator-scoped component objects
+│   └── ...
+│
 ├── helpers/                    # Selector constants
 │   ├── login.selectors.ts
 │   ├── dashboard.selectors.ts
@@ -221,6 +253,7 @@ e2e/
 └── tests/                      # Test specification files
     ├── login.spec.ts
     ├── dashboard.spec.ts
+    ├── kpi-card.component.spec.ts
     └── ...
 ```
 
@@ -346,6 +379,134 @@ export class DataTablePage extends BasePage {
     await this.getDataTableRow(index).click();
   }
 }
+```
+
+### Generated Component Objects
+
+Run `ppg component <path>` to generate **Component Objects**. Unlike page objects (rooted on `page`
+and navigable), a component object is scoped to a root `Locator` — the component's host element — so
+it composes inside pages and works even when the component renders many times.
+
+All component objects extend `BaseComponent`:
+
+```typescript
+// component-objects/base.component.ts
+import { Locator, expect } from '@playwright/test';
+
+/** Abstract base class for all component objects. Scoped to a root Locator, not a Page. */
+export abstract class BaseComponent {
+  /** The root locator this component is scoped to. */
+  protected readonly root: Locator;
+
+  constructor(root: Locator) {
+    this.root = root;
+  }
+
+  /** The root locator for this component instance. */
+  getRoot(): Locator {
+    return this.root;
+  }
+
+  /** Asserts the component's root is visible. */
+  async expectVisible(): Promise<void> {
+    await expect(this.root).toBeVisible();
+  }
+
+  /** Asserts the component's root is hidden/detached. */
+  async expectHidden(): Promise<void> {
+    await expect(this.root).toBeHidden();
+  }
+
+  /** Returns whether the component's root is currently visible. */
+  async isVisible(): Promise<boolean> {
+    return this.root.isVisible();
+  }
+
+  /** Scoped test-id lookup within this component. */
+  protected getByTestId(testId: string): Locator {
+    return this.root.getByTestId(testId);
+  }
+}
+```
+
+A component object exposes its host selector as `static readonly hostSelector` and roots every
+locator on `this.root` — there is no `navigate()`:
+
+```typescript
+// component-objects/kpi-card.component.ts
+import { Locator, expect } from '@playwright/test';
+import { BaseComponent } from './base.component';
+
+export class KpiCardComponentObject extends BaseComponent {
+  /** Host element selector. Use to build the root locator from a Page or parent. */
+  static readonly hostSelector = 'app-kpi-card';
+
+  readonly kpiTitle: Locator;
+  readonly kpiValue: Locator;
+  readonly refreshButton: Locator;
+
+  constructor(root: Locator) {
+    super(root);
+    this.kpiTitle = this.root.getByTestId('kpi-title');
+    this.kpiValue = this.root.getByTestId('kpi-value');
+    this.refreshButton = this.root.getByRole('button', { name: 'Refresh' });
+  }
+
+  async clickRefreshButton(): Promise<void> {
+    await this.refreshButton.click();
+  }
+
+  async expectRefreshButtonVisible(): Promise<void> {
+    await expect(this.refreshButton).toBeVisible();
+  }
+}
+```
+
+#### A Page Object that vends Component Objects
+
+Because a component object's root is just a `Locator`, a page object can hand out scoped instances —
+by index, or by a stable attribute such as a visible title — and the same object works when the
+component repeats `N` times:
+
+```typescript
+// dashboard.page.ts (excerpt)
+import { KpiCardComponentObject } from '../component-objects/kpi-card.component';
+
+export class DashboardPage extends BasePage {
+  /** A single KPI card scoped by index. */
+  kpiCard(index = 0): KpiCardComponentObject {
+    return new KpiCardComponentObject(
+      this.page.locator(KpiCardComponentObject.hostSelector).nth(index),
+    );
+  }
+
+  /** A KPI card scoped by its visible title (stable across reorders). */
+  kpiCardByTitle(title: string): KpiCardComponentObject {
+    return new KpiCardComponentObject(
+      this.page.locator(KpiCardComponentObject.hostSelector).filter({ hasText: title }),
+    );
+  }
+}
+```
+
+A generated component-object spec composes the object from its host page rather than navigating:
+
+```typescript
+// tests/kpi-card.component.spec.ts
+import { test, expect } from '@playwright/test';
+import { KpiCardComponentObject } from '../component-objects/kpi-card.component';
+
+const HOST_PAGE_URL = '/'; // TODO: replace with the URL of the page that renders <app-kpi-card>
+
+test.describe('KpiCardComponentObject', () => {
+  test('should render the component', async ({ page }) => {
+    await page.goto(HOST_PAGE_URL);
+    const component = new KpiCardComponentObject(
+      page.locator(KpiCardComponentObject.hostSelector).first(),
+    );
+    await component.expectVisible();
+  });
+});
 ```
 
 ### Using Generated Code in Tests

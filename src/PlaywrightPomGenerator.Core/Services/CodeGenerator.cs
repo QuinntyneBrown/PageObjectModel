@@ -339,6 +339,33 @@ public sealed class CodeGenerator : ICodeGenerator
                 }
             }
 
+            if (request.GenerateComponentObjects)
+            {
+                var componentObjectsDir = _fileSystem.CombinePath(outputPath, "component-objects");
+                _fileSystem.CreateDirectory(componentObjectsDir);
+
+                // Generate the base component class once.
+                var baseComponentFile = await GenerateBaseComponentFileAsync(componentObjectsDir, cancellationToken)
+                    .ConfigureAwait(false);
+                generatedFiles.Add(baseComponentFile);
+
+                foreach (var component in project.Components)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    try
+                    {
+                        var componentObjectFile = await GenerateComponentObjectFileAsync(component, componentObjectsDir, cancellationToken)
+                            .ConfigureAwait(false);
+                        generatedFiles.Add(componentObjectFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        warnings.Add($"Failed to generate component object for {component.Name}: {ex.Message}");
+                    }
+                }
+            }
+
             return GenerationResult.Successful(generatedFiles, warnings.Count > 0 ? warnings : null);
         }
         catch (Exception ex)
@@ -384,6 +411,96 @@ public sealed class CodeGenerator : ICodeGenerator
         {
             _logger.LogError(ex, "Failed to generate SignalR mock fixture");
             return GenerationResult.Failed($"Failed to generate SignalR mock: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<GenerationResult> GenerateComponentObjectsAsync(
+        AngularProjectInfo project,
+        string outputPath,
+        bool excludeRoutable = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(outputPath);
+
+        _logger.LogInformation("Generating component objects for {ProjectName}", project.Name);
+
+        var generatedFiles = new List<GeneratedFile>();
+        var warnings = new List<string>();
+
+        try
+        {
+            var fullOutputPath = _fileSystem.GetFullPath(outputPath);
+            _fileSystem.CreateDirectory(fullOutputPath);
+
+            var componentObjectsDir = _fileSystem.CombinePath(fullOutputPath, "component-objects");
+            var testsDir = _fileSystem.CombinePath(fullOutputPath, "tests");
+            _fileSystem.CreateDirectory(componentObjectsDir);
+            _fileSystem.CreateDirectory(testsDir);
+
+            // Deduplicate components by name (keep first occurrence, merge selectors from duplicates)
+            var deduplicatedComponents = DeduplicateComponents(project.Components);
+
+            if (deduplicatedComponents.Count < project.Components.Count)
+            {
+                var duplicateCount = project.Components.Count - deduplicatedComponents.Count;
+                warnings.Add($"Removed {duplicateCount} duplicate component(s) with the same name");
+            }
+
+            var targets = excludeRoutable
+                ? deduplicatedComponents.Where(c => !c.IsRoutable).ToList()
+                : deduplicatedComponents;
+
+            if (excludeRoutable && targets.Count < deduplicatedComponents.Count)
+            {
+                var skipped = deduplicatedComponents.Count - targets.Count;
+                warnings.Add($"Skipped {skipped} routable component(s) because --exclude-routable was set");
+            }
+
+            // Generate the base component class once.
+            var baseComponentFile = await GenerateBaseComponentFileAsync(componentObjectsDir, cancellationToken)
+                .ConfigureAwait(false);
+            generatedFiles.Add(baseComponentFile);
+
+            foreach (var component in targets)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    if (component.Selectors.Count == 0)
+                    {
+                        warnings.Add(
+                            $"Component {component.Name} has no detected selectors; generated a minimal " +
+                            "component object (hostSelector + expectVisible/expectHidden only)");
+                    }
+
+                    var componentObjectFile = await GenerateComponentObjectFileAsync(component, componentObjectsDir, cancellationToken)
+                        .ConfigureAwait(false);
+                    generatedFiles.Add(componentObjectFile);
+
+                    var specFile = await GenerateComponentObjectTestSpecFileAsync(component, testsDir, cancellationToken)
+                        .ConfigureAwait(false);
+                    generatedFiles.Add(specFile);
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add($"Failed to generate component object for {component.Name}: {ex.Message}");
+                    _logger.LogWarning(ex, "Failed to generate component object for {ComponentName}", component.Name);
+                }
+            }
+
+            _logger.LogInformation(
+                "Generated {FileCount} component-object files for {ProjectName}",
+                generatedFiles.Count, project.Name);
+
+            return GenerationResult.Successful(generatedFiles, warnings.Count > 0 ? warnings : null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate component objects for {ProjectName}", project.Name);
+            return GenerationResult.Failed($"Failed to generate component objects: {ex.Message}");
         }
     }
 
@@ -500,6 +617,67 @@ public sealed class CodeGenerator : ICodeGenerator
             RelativePath = "page-objects/base.page.ts",
             AbsolutePath = filePath,
             FileType = GeneratedFileType.PageObject,
+            Content = content
+        };
+    }
+
+    private async Task<GeneratedFile> GenerateBaseComponentFileAsync(
+        string componentObjectsDir,
+        CancellationToken cancellationToken)
+    {
+        var content = _templateEngine.GenerateBaseComponent();
+        var filePath = _fileSystem.CombinePath(componentObjectsDir, "base.component.ts");
+
+        await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new GeneratedFile
+        {
+            RelativePath = "component-objects/base.component.ts",
+            AbsolutePath = filePath,
+            FileType = GeneratedFileType.ComponentObject,
+            Content = content
+        };
+    }
+
+    private async Task<GeneratedFile> GenerateComponentObjectFileAsync(
+        AngularComponentInfo component,
+        string componentObjectsDir,
+        CancellationToken cancellationToken)
+    {
+        var content = _templateEngine.GenerateComponentObject(component);
+        var fileName = $"{ToKebabCase(component.Name)}.component.ts";
+        var filePath = _fileSystem.CombinePath(componentObjectsDir, fileName);
+
+        await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new GeneratedFile
+        {
+            RelativePath = $"component-objects/{fileName}",
+            AbsolutePath = filePath,
+            FileType = GeneratedFileType.ComponentObject,
+            Content = content
+        };
+    }
+
+    private async Task<GeneratedFile> GenerateComponentObjectTestSpecFileAsync(
+        AngularComponentInfo component,
+        string testsDir,
+        CancellationToken cancellationToken)
+    {
+        var content = _templateEngine.GenerateComponentObjectTestSpec(component);
+        var fileName = $"{ToKebabCase(component.Name)}.component.{_options.TestFileSuffix}.ts";
+        var filePath = _fileSystem.CombinePath(testsDir, fileName);
+
+        await _fileSystem.WriteAllTextAsync(filePath, content, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new GeneratedFile
+        {
+            RelativePath = $"tests/{fileName}",
+            AbsolutePath = filePath,
+            FileType = GeneratedFileType.TestSpec,
             Content = content
         };
     }

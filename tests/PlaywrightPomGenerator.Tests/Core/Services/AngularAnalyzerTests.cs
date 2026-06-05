@@ -245,6 +245,85 @@ public sealed class AngularAnalyzerTests
     }
 
     [Fact]
+    public async Task AnalyzeComponentsAtPathAsync_WithArbitraryFolder_ShouldScanForComponents()
+    {
+        // Arrange - a plain folder that is neither a workspace, application, nor library
+        _fileSystem.AddFile("/features/dashboard/kpi-card.component.ts", """
+            import { Component } from '@angular/core';
+
+            @Component({
+                selector: 'app-kpi-card',
+                template: '<div><span data-testid="kpi-title">{{ title }}</span></div>'
+            })
+            export class KpiCardComponent {}
+            """);
+
+        // Act
+        var result = await _analyzer.AnalyzeComponentsAtPathAsync("/features/dashboard", "dashboard");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Components.Should().Contain(c => c.Name == "KpiCardComponent" && c.Selector == "app-kpi-card");
+    }
+
+    [Fact]
+    public async Task AnalyzeComponentsAtPathAsync_WithApplicationDirectory_ShouldFindComponents()
+    {
+        // Arrange
+        _fileSystem.AddFile("/app/angular.json", """
+            {
+                "version": 1,
+                "projects": {
+                    "app": {
+                        "projectType": "application",
+                        "root": "",
+                        "sourceRoot": "src"
+                    }
+                }
+            }
+            """);
+        _fileSystem.AddFile("/app/src/app/login/login.component.ts", """
+            import { Component } from '@angular/core';
+
+            @Component({
+                selector: 'app-login',
+                template: '<button>Login</button>'
+            })
+            export class LoginComponent {}
+            """);
+
+        // Act
+        var result = await _analyzer.AnalyzeComponentsAtPathAsync("/app", "app");
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Components.Should().Contain(c => c.Name == "LoginComponent");
+    }
+
+    [Fact]
+    public async Task AnalyzeComponentsAtPathAsync_WithEmptyFolder_ShouldReturnNoComponents()
+    {
+        // Arrange
+        _fileSystem.AddDirectory("/empty");
+
+        // Act
+        var result = await _analyzer.AnalyzeComponentsAtPathAsync("/empty", "empty");
+
+        // Assert
+        result.Components.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AnalyzeComponentsAtPathAsync_WithNullPath_ShouldThrowArgumentNullException()
+    {
+        // Act
+        var act = () => _analyzer.AnalyzeComponentsAtPathAsync(null!, "proj");
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
     public void Constructor_WithNullFileSystem_ShouldThrowArgumentNullException()
     {
         // Act

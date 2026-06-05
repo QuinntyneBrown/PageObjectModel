@@ -43,6 +43,7 @@ public sealed class ProgramTests
         host.Services.GetService<GenerateAppCommandHandler>().Should().NotBeNull();
         host.Services.GetService<GenerateWorkspaceCommandHandler>().Should().NotBeNull();
         host.Services.GetService<GenerateLibraryCommandHandler>().Should().NotBeNull();
+        host.Services.GetService<GenerateComponentCommandHandler>().Should().NotBeNull();
         host.Services.GetService<GenerateArtifactsCommandHandler>().Should().NotBeNull();
         host.Services.GetService<GenerateSignalRMockCommandHandler>().Should().NotBeNull();
     }
@@ -58,10 +59,11 @@ public sealed class ProgramTests
 
         // Assert
         rootCommand.Should().NotBeNull();
-        rootCommand.Subcommands.Should().HaveCount(6);
+        rootCommand.Subcommands.Should().HaveCount(7);
         rootCommand.Subcommands.Should().Contain(c => c.Name == "app");
         rootCommand.Subcommands.Should().Contain(c => c.Name == "workspace");
         rootCommand.Subcommands.Should().Contain(c => c.Name == "lib");
+        rootCommand.Subcommands.Should().Contain(c => c.Name == "component");
         rootCommand.Subcommands.Should().Contain(c => c.Name == "artifacts");
         rootCommand.Subcommands.Should().Contain(c => c.Name == "signalr-mock");
         rootCommand.Subcommands.Should().Contain(c => c.Name == "remote");

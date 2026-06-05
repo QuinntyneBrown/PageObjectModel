@@ -37,6 +37,9 @@ public sealed class CodeGeneratorTests
         _templateEngine.GenerateSelectors(Arg.Any<AngularComponentInfo>()).Returns("// selectors");
         _templateEngine.GenerateTestSpec(Arg.Any<AngularComponentInfo>()).Returns("// test spec");
         _templateEngine.GenerateSignalRMock().Returns("// signalr mock");
+        _templateEngine.GenerateBaseComponent().Returns("// base component");
+        _templateEngine.GenerateComponentObject(Arg.Any<AngularComponentInfo>()).Returns("// component object");
+        _templateEngine.GenerateComponentObjectTestSpec(Arg.Any<AngularComponentInfo>()).Returns("// component spec");
 
         _generator = new CodeGenerator(_analyzer, _templateEngine, _fileSystem, _logger, optionsWrapper);
     }
@@ -193,6 +196,207 @@ public sealed class CodeGeneratorTests
         _fileSystem.WrittenFiles.Should().ContainKey("/output/signalr-mock.fixture.ts");
     }
 
+    // ---------------------------------------------------------------------
+    // Component objects
+    // ---------------------------------------------------------------------
+
+    [Fact]
+    public async Task GenerateComponentObjectsAsync_ShouldGenerateBaseAndPerComponentFiles()
+    {
+        // Arrange
+        var project = CreateTestProject();
+
+        // Act
+        var result = await _generator.GenerateComponentObjectsAsync(project, "/output");
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.GeneratedFiles.Should().Contain(f =>
+            f.FileType == GeneratedFileType.ComponentObject &&
+            f.RelativePath == "component-objects/base.component.ts");
+        result.GeneratedFiles.Should().Contain(f =>
+            f.FileType == GeneratedFileType.ComponentObject &&
+            f.RelativePath == "component-objects/login.component.ts");
+        result.GeneratedFiles.Should().Contain(f =>
+            f.FileType == GeneratedFileType.TestSpec &&
+            f.RelativePath == "tests/login.component.spec.ts");
+    }
+
+    [Fact]
+    public async Task GenerateComponentObjectsAsync_ShouldCreateComponentObjectsAndTestsDirectories()
+    {
+        // Arrange
+        var project = CreateTestProject();
+
+        // Act
+        await _generator.GenerateComponentObjectsAsync(project, "/output");
+
+        // Assert
+        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("component-objects"));
+        _fileSystem.CreatedDirectories.Should().Contain(d => d.Contains("tests"));
+    }
+
+    [Fact]
+    public async Task GenerateComponentObjectsAsync_ShouldEmitBaseComponentExactlyOnce()
+    {
+        // Arrange
+        var project = CreateMixedProject();
+
+        // Act
+        var result = await _generator.GenerateComponentObjectsAsync(project, "/output");
+
+        // Assert
+        result.GeneratedFiles
+            .Count(f => f.RelativePath == "component-objects/base.component.ts")
+            .Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GenerateComponentObjectsAsync_WithoutExcludeRoutable_ShouldGenerateForAllComponents()
+    {
+        // Arrange
+        var project = CreateMixedProject();
+
+        // Act
+        var result = await _generator.GenerateComponentObjectsAsync(project, "/output", excludeRoutable: false);
+
+        // Assert - both the routable page and the non-routable widget get component objects
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "component-objects/dashboard.component.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "component-objects/kpi-card.component.ts");
+    }
+
+    [Fact]
+    public async Task GenerateComponentObjectsAsync_WithExcludeRoutable_ShouldSkipRoutableComponents()
+    {
+        // Arrange
+        var project = CreateMixedProject();
+
+        // Act
+        var result = await _generator.GenerateComponentObjectsAsync(project, "/output", excludeRoutable: true);
+
+        // Assert
+        result.GeneratedFiles.Should().NotContain(f => f.RelativePath == "component-objects/dashboard.component.ts");
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "component-objects/kpi-card.component.ts");
+        result.Warnings.Should().Contain(w => w.Contains("routable") && w.Contains("--exclude-routable"));
+    }
+
+    [Fact]
+    public async Task GenerateComponentObjectsAsync_WithExcludeRoutable_ShouldNotWarnAboutSelectorsForSkippedRoutable()
+    {
+        // Arrange - a routable component with no selectors that should be filtered out entirely
+        var project = new AngularProjectInfo
+        {
+            Name = "dashboard-app",
+            RootPath = "/app",
+            SourceRoot = "/app/src",
+            ProjectType = AngularProjectType.Application,
+            Components =
+            [
+                new AngularComponentInfo
+                {
+                    Name = "DashboardComponent",
+                    Selector = "app-dashboard",
+                    FilePath = "/app/src/app/pages/dashboard/dashboard.component.ts",
+                    IsRoutable = true
+                },
+                new AngularComponentInfo
+                {
+                    Name = "KpiCardComponent",
+                    Selector = "app-kpi-card",
+                    FilePath = "/app/src/app/kpi-card/kpi-card.component.ts",
+                    IsRoutable = false
+                }
+            ]
+        };
+
+        // Act
+        var result = await _generator.GenerateComponentObjectsAsync(project, "/output", excludeRoutable: true);
+
+        // Assert - the skipped routable component produces neither a file nor a 'no selectors' warning
+        result.GeneratedFiles.Should().NotContain(f => f.RelativePath == "component-objects/dashboard.component.ts");
+        result.Warnings.Should().NotContain(w => w.Contains("DashboardComponent") && w.Contains("no detected selectors"));
+    }
+
+    [Fact]
+    public async Task GenerateComponentObjectsAsync_WithComponentWithoutSelectors_ShouldWarn()
+    {
+        // Arrange
+        var project = new AngularProjectInfo
+        {
+            Name = "test-app",
+            RootPath = "/app",
+            SourceRoot = "/app/src",
+            ProjectType = AngularProjectType.Application,
+            Components =
+            [
+                new AngularComponentInfo
+                {
+                    Name = "EmptyWidgetComponent",
+                    Selector = "app-empty-widget",
+                    FilePath = "/app/src/app/empty-widget/empty-widget.component.ts"
+                }
+            ]
+        };
+
+        // Act
+        var result = await _generator.GenerateComponentObjectsAsync(project, "/output");
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.Warnings.Should().Contain(w => w.Contains("EmptyWidgetComponent") && w.Contains("no detected selectors"));
+        result.GeneratedFiles.Should().Contain(f => f.RelativePath == "component-objects/empty-widget.component.ts");
+    }
+
+    [Fact]
+    public async Task GenerateComponentObjectsAsync_WithNullProject_ShouldThrowArgumentNullException()
+    {
+        // Act
+        var act = () => _generator.GenerateComponentObjectsAsync(null!, "/output");
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task GenerateComponentObjectsAsync_WithNullOutputPath_ShouldThrowArgumentNullException()
+    {
+        // Arrange
+        var project = CreateTestProject();
+
+        // Act
+        var act = () => _generator.GenerateComponentObjectsAsync(project, null!);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task GenerateArtifactsAsync_WithComponentObjects_ShouldGenerateComponentObjects()
+    {
+        // Arrange
+        _analyzer.IsWorkspace(Arg.Any<string>()).Returns(true);
+        _analyzer.AnalyzeWorkspaceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestWorkspaceWithComponents());
+
+        var request = new GenerationRequest
+        {
+            TargetPath = "/app",
+            GenerateComponentObjects = true
+        };
+
+        // Act
+        var result = await _generator.GenerateArtifactsAsync(request);
+
+        // Assert
+        result.Success.Should().BeTrue();
+        result.GeneratedFiles.Should().Contain(f =>
+            f.FileType == GeneratedFileType.ComponentObject &&
+            f.RelativePath.Contains("base.component.ts"));
+        result.GeneratedFiles.Should().Contain(f =>
+            f.FileType == GeneratedFileType.ComponentObject &&
+            f.RelativePath.Contains("kpi-card.component.ts"));
+    }
+
     [Fact]
     public void Constructor_WithNullAnalyzer_ShouldThrowArgumentNullException()
     {
@@ -289,6 +493,62 @@ public sealed class CodeGeneratorTests
                     SourceRoot = "/workspace/projects/app1/src",
                     ProjectType = AngularProjectType.Application,
                     Components = []
+                }
+            ]
+        };
+    }
+
+    private static AngularProjectInfo CreateMixedProject()
+    {
+        return new AngularProjectInfo
+        {
+            Name = "dashboard-app",
+            RootPath = "/app",
+            SourceRoot = "/app/src",
+            ProjectType = AngularProjectType.Application,
+            Components =
+            [
+                new AngularComponentInfo
+                {
+                    Name = "DashboardComponent",
+                    Selector = "app-dashboard",
+                    FilePath = "/app/src/app/pages/dashboard/dashboard.component.ts",
+                    IsRoutable = true
+                },
+                new AngularComponentInfo
+                {
+                    Name = "KpiCardComponent",
+                    Selector = "app-kpi-card",
+                    FilePath = "/app/src/app/dashboard/kpi-card/kpi-card.component.ts",
+                    IsRoutable = false
+                }
+            ]
+        };
+    }
+
+    private static AngularWorkspaceInfo CreateTestWorkspaceWithComponents()
+    {
+        return new AngularWorkspaceInfo
+        {
+            RootPath = "/workspace",
+            DefaultProject = "app1",
+            Projects =
+            [
+                new AngularProjectInfo
+                {
+                    Name = "app1",
+                    RootPath = "/workspace/projects/app1",
+                    SourceRoot = "/workspace/projects/app1/src",
+                    ProjectType = AngularProjectType.Application,
+                    Components =
+                    [
+                        new AngularComponentInfo
+                        {
+                            Name = "KpiCardComponent",
+                            Selector = "app-kpi-card",
+                            FilePath = "/workspace/projects/app1/src/app/kpi-card/kpi-card.component.ts"
+                        }
+                    ]
                 }
             ]
         };

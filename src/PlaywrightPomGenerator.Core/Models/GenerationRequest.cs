@@ -41,6 +41,11 @@ public sealed record GenerationRequest
     public bool GenerateHelpers { get; init; }
 
     /// <summary>
+    /// Gets whether to generate component objects (root-Locator-scoped, for composition inside pages).
+    /// </summary>
+    public bool GenerateComponentObjects { get; init; }
+
+    /// <summary>
     /// Gets the specific project name to generate for (optional, for workspaces).
     /// </summary>
     public string? ProjectName { get; init; }
@@ -50,7 +55,7 @@ public sealed record GenerationRequest
     /// </summary>
     public bool HasAnyGenerationOption =>
         GenerateFixtures || GenerateConfigs || GenerateSelectors ||
-        GeneratePageObjects || GenerateHelpers;
+        GeneratePageObjects || GenerateHelpers || GenerateComponentObjects;
 
     /// <summary>
     /// Creates a request to generate all artifacts.
@@ -67,6 +72,7 @@ public sealed record GenerationRequest
             GenerateConfigs = true,
             GenerateSelectors = true,
             GeneratePageObjects = true,
-            GenerateHelpers = true
+            GenerateHelpers = true,
+            GenerateComponentObjects = true
         };
 }

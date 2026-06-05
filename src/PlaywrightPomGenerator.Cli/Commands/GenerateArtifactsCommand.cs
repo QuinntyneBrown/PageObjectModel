@@ -51,6 +51,11 @@ public sealed class GenerateArtifactsCommand : Command
     public Option<bool> HelpersOption { get; }
 
     /// <summary>
+    /// Gets the component objects option.
+    /// </summary>
+    public Option<bool> ComponentObjectsOption { get; }
+
+    /// <summary>
     /// Gets the all option.
     /// </summary>
     public Option<bool> AllOption { get; }
@@ -80,6 +85,8 @@ public sealed class GenerateArtifactsCommand : Command
 
         HelpersOption = new Option<bool>("--helpers", "Generate helper utilities");
 
+        ComponentObjectsOption = new Option<bool>("--component-objects", "Generate component objects (root-scoped, for composition inside pages)");
+
         AllOption = new Option<bool>(new[] { "-a", "--all" }, "Generate all artifacts");
 
         Add(PathArgument);
@@ -90,6 +97,7 @@ public sealed class GenerateArtifactsCommand : Command
         Add(SelectorsOption);
         Add(PageObjectsOption);
         Add(HelpersOption);
+        Add(ComponentObjectsOption);
         Add(AllOption);
     }
 }
@@ -126,6 +134,7 @@ public sealed class GenerateArtifactsCommandHandler
     /// <param name="selectors">Generate selectors.</param>
     /// <param name="pageObjects">Generate page objects.</param>
     /// <param name="helpers">Generate helpers.</param>
+    /// <param name="componentObjects">Generate component objects.</param>
     /// <param name="all">Generate all artifacts.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The exit code.</returns>
@@ -138,6 +147,7 @@ public sealed class GenerateArtifactsCommandHandler
         bool selectors,
         bool pageObjects,
         bool helpers,
+        bool componentObjects,
         bool all,
         CancellationToken cancellationToken)
     {
@@ -151,14 +161,15 @@ public sealed class GenerateArtifactsCommandHandler
             selectors = true;
             pageObjects = true;
             helpers = true;
+            componentObjects = true;
         }
 
         // Validate at least one option is selected
-        if (!fixtures && !configs && !selectors && !pageObjects && !helpers)
+        if (!fixtures && !configs && !selectors && !pageObjects && !helpers && !componentObjects)
         {
             Console.Error.WriteLine("Error: At least one artifact type must be specified.");
             Console.Error.WriteLine("Use --all to generate all artifacts, or specify individual options:");
-            Console.Error.WriteLine("  --fixtures, --configs, --selectors, --page-objects, --helpers");
+            Console.Error.WriteLine("  --fixtures, --configs, --selectors, --page-objects, --helpers, --component-objects");
             return 1;
         }
 
@@ -173,7 +184,8 @@ public sealed class GenerateArtifactsCommandHandler
             GenerateConfigs = configs,
             GenerateSelectors = selectors,
             GeneratePageObjects = pageObjects,
-            GenerateHelpers = helpers
+            GenerateHelpers = helpers,
+            GenerateComponentObjects = componentObjects
         };
 
         try

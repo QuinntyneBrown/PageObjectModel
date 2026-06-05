@@ -61,7 +61,8 @@ public interface IAngularAnalyzer
     /// <summary>
     /// Analyzes Angular components at an arbitrary path (file or directory) without
     /// requiring angular.json or package.json. Useful for analyzing remote repositories
-    /// where the URL points to a specific component file or folder.
+    /// where the URL points to a specific component file or folder, or for pointing the
+    /// generator at a feature or component folder that is neither a full app nor a library.
     /// </summary>
     /// <param name="targetPath">The path to the file or directory to analyze.</param>
     /// <param name="projectName">The name to use for the generated project.</param>

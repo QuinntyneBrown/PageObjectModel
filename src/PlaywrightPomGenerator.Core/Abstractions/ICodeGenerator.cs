@@ -52,4 +52,20 @@ public interface ICodeGenerator
     Task<GenerationResult> GenerateSignalRMockAsync(
         string outputPath,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Generates Playwright Component Object Model classes for the components in a project.
+    /// Each non-page component becomes a root-<c>Locator</c>-scoped component object suitable for
+    /// composition inside page objects.
+    /// </summary>
+    /// <param name="project">The Angular project information.</param>
+    /// <param name="outputPath">The output directory path.</param>
+    /// <param name="excludeRoutable">When true, components whose <see cref="AngularComponentInfo.IsRoutable"/> is true are skipped.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The result of the generation operation.</returns>
+    Task<GenerationResult> GenerateComponentObjectsAsync(
+        AngularProjectInfo project,
+        string outputPath,
+        bool excludeRoutable = false,
+        CancellationToken cancellationToken = default);
 }
