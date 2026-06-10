@@ -1,9 +1,12 @@
+using System.CommandLine.Parsing;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using PlaywrightPomGenerator.Cli;
 using PlaywrightPomGenerator.Cli.Commands;
 using PlaywrightPomGenerator.Core.Abstractions;
+using PlaywrightPomGenerator.Core.Models;
 
 namespace PlaywrightPomGenerator.Tests.Cli;
 
@@ -90,5 +93,119 @@ public sealed class ProgramTests
         provider.GetService<ICodeGenerator>().Should().NotBeNull();
         provider.GetService<ISidecarTransport>().Should().NotBeNull();
         provider.GetService<ITypeScriptAnalyzer>().Should().NotBeNull();
+        provider.GetService<IAstProjectAnalyzer>().Should().NotBeNull();
+        provider.GetService<IPackageInspector>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void BuildRootCommand_ShouldExposeEngineGlobalOption()
+    {
+        // Arrange
+        using var host = Program.CreateHost([]);
+
+        // Act
+        var rootCommand = Program.BuildRootCommand(host.Services);
+
+        // Assert — global options apply to every subcommand.
+        var parser = new Parser(rootCommand);
+        var parsed = parser.Parse("app . --engine regex");
+        parsed.Errors.Should().BeEmpty();
+        parsed.GetValueForOption(Program.EngineOption).Should().Be("regex");
+
+        var invalid = parser.Parse("app . --engine bogus");
+        invalid.Errors.Should().NotBeEmpty("--engine only accepts auto|ast|regex");
+    }
+
+    [Fact]
+    public void ConfigureServices_WithEngineOverride_ShouldSetAnalysisEngine()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var configuration = new ConfigurationBuilder().Build();
+
+        // Act
+        Program.ConfigureServices(services, configuration, engineOverride: "regex");
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<GeneratorOptions>>().Value;
+
+        // Assert
+        options.AnalysisEngine.Should().Be(AnalysisEngine.Regex);
+    }
+
+    [Fact]
+    public void ConfigureServices_WithNoComponentObjects_ShouldDisableComponentObjectsAndComposition()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var configuration = new ConfigurationBuilder().Build();
+
+        // Act
+        Program.ConfigureServices(services, configuration, noComponentObjects: true);
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<GeneratorOptions>>().Value;
+
+        // Assert — the 1.x layout escape hatch implies no composition.
+        options.EmitComponentObjects.Should().BeFalse();
+        options.EmitComposition.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ConfigureServices_WithNoComposition_ShouldOnlyDisableComposition()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var configuration = new ConfigurationBuilder().Build();
+
+        // Act
+        Program.ConfigureServices(services, configuration, noComposition: true);
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<GeneratorOptions>>().Value;
+
+        // Assert
+        options.EmitComponentObjects.Should().BeTrue();
+        options.EmitComposition.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BuildRootCommand_ShouldExposeOutputShapeGlobalFlags()
+    {
+        // Arrange
+        using var host = Program.CreateHost([]);
+        var rootCommand = Program.BuildRootCommand(host.Services);
+
+        // Act
+        var parsed = new Parser(rootCommand).Parse("app . --no-component-objects --no-composition");
+
+        // Assert
+        parsed.Errors.Should().BeEmpty();
+        parsed.GetValueForOption(Program.NoComponentObjectsOption).Should().BeTrue();
+        parsed.GetValueForOption(Program.NoCompositionOption).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ConfigureServices_ShouldDeriveToolVersionFromAssembly()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var configuration = new ConfigurationBuilder().Build();
+
+        // Act
+        Program.ConfigureServices(services, configuration);
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<GeneratorOptions>>().Value;
+
+        // Assert — the runtime value tracks the Cli assembly version, ending the
+        // hand-synced ToolVersion default.
+        var assemblyVersion = typeof(Program).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .First().InformationalVersion;
+        var plusIndex = assemblyVersion.IndexOf('+');
+        var expected = plusIndex > 0 ? assemblyVersion[..plusIndex] : assemblyVersion;
+        options.ToolVersion.Should().Be(expected);
     }
 }

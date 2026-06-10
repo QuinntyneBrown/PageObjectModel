@@ -92,6 +92,8 @@ public sealed class GenerateComponentCommandHandler
             var project = await _analyzer.AnalyzeComponentsAtPathAsync(path, projectName, cancellationToken)
                 .ConfigureAwait(false);
 
+            ResultPrinter.PrintAnalysisEngine(project.Analysis);
+
             _logger.LogInformation(
                 "Found {ComponentCount} component(s) at {Path}",
                 project.Components.Count, path);

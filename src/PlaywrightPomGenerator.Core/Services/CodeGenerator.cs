@@ -84,6 +84,13 @@ public sealed class CodeGenerator : ICodeGenerator
                     duplicateCount, project.Name);
             }
 
+            // Component objects for composition: components embedded by others plus
+            // the non-routable ones (top-level pages nobody embeds don't need one).
+            var componentObjectTargets = _options.EmitComponentObjects
+                ? ComputeComponentObjectTargets(deduplicatedComponents)
+                : [];
+            var context = BuildTemplateContext(deduplicatedProject, componentObjectTargets, warnings);
+
             // Generate playwright config
             var configFile = await GenerateConfigFileAsync(deduplicatedProject, fullOutputPath, cancellationToken)
                 .ConfigureAwait(false);
@@ -114,6 +121,35 @@ public sealed class CodeGenerator : ICodeGenerator
                 .ConfigureAwait(false);
             generatedFiles.Add(basePageFile);
 
+            // Component objects (components/ directory) so page-object composition
+            // always resolves its imports.
+            if (componentObjectTargets.Count > 0)
+            {
+                var componentObjectsDir = _fileSystem.CombinePath(fullOutputPath, "components");
+                _fileSystem.CreateDirectory(componentObjectsDir);
+
+                var baseComponentFile = await GenerateBaseComponentFileAsync(componentObjectsDir, cancellationToken)
+                    .ConfigureAwait(false);
+                generatedFiles.Add(baseComponentFile);
+
+                foreach (var component in componentObjectTargets)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    try
+                    {
+                        var componentObjectFile = await GenerateComponentObjectFileAsync(component, componentObjectsDir, cancellationToken, context)
+                            .ConfigureAwait(false);
+                        generatedFiles.Add(componentObjectFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        warnings.Add($"Failed to generate component object for {component.Name}: {ex.Message}");
+                        _logger.LogWarning(ex, "Failed to generate component object for {ComponentName}", component.Name);
+                    }
+                }
+            }
+
             // Generate page objects, selectors, and tests for each component
             foreach (var component in deduplicatedComponents)
             {
@@ -121,7 +157,7 @@ public sealed class CodeGenerator : ICodeGenerator
 
                 try
                 {
-                    var pageObjectFile = await GeneratePageObjectFileAsync(component, pageObjectsDir, cancellationToken)
+                    var pageObjectFile = await GeneratePageObjectFileAsync(component, pageObjectsDir, cancellationToken, context)
                         .ConfigureAwait(false);
                     generatedFiles.Add(pageObjectFile);
 
@@ -293,6 +329,12 @@ public sealed class CodeGenerator : ICodeGenerator
                 generatedFiles.Add(helpersFile);
             }
 
+            // Composition only resolves when component objects are generated alongside
+            // page objects in the same run.
+            var context = request.GeneratePageObjects && request.GenerateComponentObjects
+                ? BuildTemplateContext(project, project.Components, warnings)
+                : BuildTemplateContext(project, [], request.GeneratePageObjects ? warnings : null);
+
             if (request.GeneratePageObjects || request.GenerateSelectors)
             {
                 var pageObjectsDir = _fileSystem.CombinePath(outputPath, "page-objects");
@@ -320,7 +362,7 @@ public sealed class CodeGenerator : ICodeGenerator
                     {
                         if (request.GeneratePageObjects)
                         {
-                            var pageObjectFile = await GeneratePageObjectFileAsync(component, pageObjectsDir, cancellationToken)
+                            var pageObjectFile = await GeneratePageObjectFileAsync(component, pageObjectsDir, cancellationToken, context)
                                 .ConfigureAwait(false);
                             generatedFiles.Add(pageObjectFile);
                         }
@@ -355,7 +397,7 @@ public sealed class CodeGenerator : ICodeGenerator
 
                     try
                     {
-                        var componentObjectFile = await GenerateComponentObjectFileAsync(component, componentObjectsDir, cancellationToken)
+                        var componentObjectFile = await GenerateComponentObjectFileAsync(component, componentObjectsDir, cancellationToken, context)
                             .ConfigureAwait(false);
                         generatedFiles.Add(componentObjectFile);
                     }
@@ -458,6 +500,11 @@ public sealed class CodeGenerator : ICodeGenerator
                 warnings.Add($"Skipped {skipped} routable component(s) because --exclude-routable was set");
             }
 
+            // Every generated component object can compose the others; host page
+            // URLs come from the route tree when available.
+            var context = BuildTemplateContext(
+                project with { Components = deduplicatedComponents }, targets, warnings);
+
             // Generate the base component class once.
             var baseComponentFile = await GenerateBaseComponentFileAsync(componentObjectsDir, cancellationToken)
                 .ConfigureAwait(false);
@@ -476,11 +523,11 @@ public sealed class CodeGenerator : ICodeGenerator
                             "component object (hostSelector + expectVisible/expectHidden only)");
                     }
 
-                    var componentObjectFile = await GenerateComponentObjectFileAsync(component, componentObjectsDir, cancellationToken)
+                    var componentObjectFile = await GenerateComponentObjectFileAsync(component, componentObjectsDir, cancellationToken, context)
                         .ConfigureAwait(false);
                     generatedFiles.Add(componentObjectFile);
 
-                    var specFile = await GenerateComponentObjectTestSpecFileAsync(component, testsDir, cancellationToken)
+                    var specFile = await GenerateComponentObjectTestSpecFileAsync(component, testsDir, cancellationToken, context)
                         .ConfigureAwait(false);
                     generatedFiles.Add(specFile);
                 }
@@ -795,9 +842,10 @@ public sealed class CodeGenerator : ICodeGenerator
     private async Task<GeneratedFile> GenerateComponentObjectFileAsync(
         AngularComponentInfo component,
         string componentObjectsDir,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TemplateContext? context = null)
     {
-        var content = _templateEngine.GenerateComponentObject(component);
+        var content = _templateEngine.GenerateComponentObject(component, context);
         var fileName = $"{ToKebabCase(component.Name)}.component.ts";
         var filePath = _fileSystem.CombinePath(componentObjectsDir, fileName);
 
@@ -816,9 +864,10 @@ public sealed class CodeGenerator : ICodeGenerator
     private async Task<GeneratedFile> GenerateComponentObjectTestSpecFileAsync(
         AngularComponentInfo component,
         string testsDir,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TemplateContext? context = null)
     {
-        var content = _templateEngine.GenerateComponentObjectTestSpec(component);
+        var content = _templateEngine.GenerateComponentObjectTestSpec(component, context);
         var fileName = $"{ToKebabCase(component.Name)}.component.{_options.TestFileSuffix}.ts";
         var filePath = _fileSystem.CombinePath(testsDir, fileName);
 
@@ -837,9 +886,10 @@ public sealed class CodeGenerator : ICodeGenerator
     private async Task<GeneratedFile> GeneratePageObjectFileAsync(
         AngularComponentInfo component,
         string pageObjectsDir,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TemplateContext? context = null)
     {
-        var content = _templateEngine.GeneratePageObject(component);
+        var content = _templateEngine.GeneratePageObject(component, context);
         var fileName = $"{ToKebabCase(component.Name)}.page.ts";
         var filePath = _fileSystem.CombinePath(pageObjectsDir, fileName);
 
@@ -895,6 +945,87 @@ public sealed class CodeGenerator : ICodeGenerator
             FileType = GeneratedFileType.TestSpec,
             Content = content
         };
+    }
+
+    /// <summary>
+    /// Components that get a component object in an application run: components
+    /// embedded by others (composition needs them) plus all non-routable
+    /// components. Top-level pages nobody embeds don't need one.
+    /// </summary>
+    private static List<AngularComponentInfo> ComputeComponentObjectTargets(IReadOnlyList<AngularComponentInfo> components)
+    {
+        var referencedNames = components
+            .SelectMany(c => c.ChildComponents)
+            .Where(child => child.ComponentName is not null)
+            .Select(child => child.ComponentName!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return components
+            .Where(c => referencedNames.Contains(c.Name) || !c.IsRoutable)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Builds the generation-time context: which component objects exist in this
+    /// run (gates composition) and the best host-page URL per embedded component
+    /// (from the route tree). Warns about children whose composition is skipped.
+    /// </summary>
+    private TemplateContext BuildTemplateContext(
+        AngularProjectInfo project,
+        IReadOnlyList<AngularComponentInfo> componentObjectTargets,
+        List<string>? warnings)
+    {
+        var componentObjectNames = _options.EmitComposition
+            ? componentObjectTargets.Select(c => c.Name).ToHashSet(StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+
+        if (warnings is not null && _options.EmitComposition)
+        {
+            var skippedChildren = project.Components
+                .SelectMany(c => c.ChildComponents)
+                .Where(child => child.ComponentName is not null && !componentObjectNames.Contains(child.ComponentName))
+                .Select(child => child.ComponentName!)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (skippedChildren.Count > 0)
+            {
+                warnings.Add(
+                    "Composition accessors skipped for: " + string.Join(", ", skippedChildren) +
+                    " (their component objects are not generated in this run)");
+            }
+        }
+
+        return new TemplateContext
+        {
+            ComponentObjectNames = componentObjectNames,
+            HostPageUrls = BuildHostPageUrls(project)
+        };
+    }
+
+    /// <summary>
+    /// For each component, the URL of the best routable page embedding it:
+    /// parameter-free routes preferred, then shortest path.
+    /// </summary>
+    private static Dictionary<string, string> BuildHostPageUrls(AngularProjectInfo project)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var component in project.Components)
+        {
+            var bestHostPath = project.Components
+                .Where(host => host.IsRoutable
+                    && host.RoutePath is not null
+                    && host.ChildComponents.Any(child => child.ComponentName == component.Name))
+                .Select(host => host.RoutePath!)
+                .Where(path => !path.Contains(':'))
+                .OrderBy(path => path.Count(c => c == '/'))
+                .ThenBy(path => path.Length)
+                .FirstOrDefault();
+            if (bestHostPath is not null)
+            {
+                map[component.Name] = "/" + bestHostPath;
+            }
+        }
+        return map;
     }
 
     private static List<AngularComponentInfo> DeduplicateComponents(IReadOnlyList<AngularComponentInfo> components)

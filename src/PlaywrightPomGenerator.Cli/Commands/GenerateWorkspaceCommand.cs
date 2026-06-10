@@ -39,10 +39,20 @@ public sealed class GenerateWorkspaceCommand : Command
 
         ProjectOption = new Option<string?>(new[] { "-p", "--project" }, "Specific project name to generate for (generates for all applications if not specified)");
 
+        DistOption = new Option<string?>("--dist",
+            "Path to the Angular build output (dist) directory. Auto-detected per project when omitted; " +
+            "feeds the deployed <base href> into the generated baseURL and confirms prerendered routes.");
+
         Add(PathArgument);
         Add(OutputOption);
         Add(ProjectOption);
+        Add(DistOption);
     }
+
+    /// <summary>
+    /// Gets the dist option (build output analysis: base href, prerendered routes).
+    /// </summary>
+    public Option<string?> DistOption { get; }
 }
 
 /// <summary>
@@ -52,6 +62,7 @@ public sealed class GenerateWorkspaceCommandHandler
 {
     private readonly IAngularAnalyzer _analyzer;
     private readonly ICodeGenerator _generator;
+    private readonly IDistAnalyzer _distAnalyzer;
     private readonly ILogger<GenerateWorkspaceCommandHandler> _logger;
 
     /// <summary>
@@ -59,14 +70,17 @@ public sealed class GenerateWorkspaceCommandHandler
     /// </summary>
     /// <param name="analyzer">The Angular analyzer.</param>
     /// <param name="generator">The code generator.</param>
+    /// <param name="distAnalyzer">The dist output analyzer.</param>
     /// <param name="logger">The logger.</param>
     public GenerateWorkspaceCommandHandler(
         IAngularAnalyzer analyzer,
         ICodeGenerator generator,
+        IDistAnalyzer distAnalyzer,
         ILogger<GenerateWorkspaceCommandHandler> logger)
     {
         _analyzer = analyzer ?? throw new ArgumentNullException(nameof(analyzer));
         _generator = generator ?? throw new ArgumentNullException(nameof(generator));
+        _distAnalyzer = distAnalyzer ?? throw new ArgumentNullException(nameof(distAnalyzer));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -76,12 +90,14 @@ public sealed class GenerateWorkspaceCommandHandler
     /// <param name="path">The path to the Angular workspace.</param>
     /// <param name="output">The output directory.</param>
     /// <param name="project">The specific project name.</param>
+    /// <param name="dist">The dist directory to analyze (null auto-detects per project).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The exit code.</returns>
     public async Task<int> ExecuteAsync(
         string path,
         string? output,
         string? project,
+        string? dist,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(path);
@@ -99,6 +115,25 @@ public sealed class GenerateWorkspaceCommandHandler
         {
             var workspace = await _analyzer.AnalyzeWorkspaceAsync(path, cancellationToken)
                 .ConfigureAwait(false);
+
+            ResultPrinter.PrintAnalysisEngine(workspace.Projects.FirstOrDefault()?.Analysis);
+
+            // Attach dist facts per project (an explicit --dist applies to all).
+            var enrichedProjects = new List<Core.Models.AngularProjectInfo>();
+            foreach (var workspaceProject in workspace.Projects)
+            {
+                var distAnalysis = await _distAnalyzer
+                    .AnalyzeAsync(path, workspaceProject.Name, dist, cancellationToken)
+                    .ConfigureAwait(false);
+                if (distAnalysis is not null)
+                {
+                    Console.WriteLine(
+                        $"Dist analysis [{workspaceProject.Name}]: {distAnalysis.DistPath} " +
+                        $"(base href '{distAnalysis.BaseHref ?? "/"}', {distAnalysis.PrerenderedRoutes.Count} prerendered routes)");
+                }
+                enrichedProjects.Add(workspaceProject with { Dist = distAnalysis });
+            }
+            workspace = workspace with { Projects = enrichedProjects };
 
             _logger.LogInformation(
                 "Found {ProjectCount} projects in workspace",

@@ -35,10 +35,14 @@ jobs:
         with:
           node-version: '20'
 
-      # The 'bridge' command and its tests use the Node TypeScript AST sidecar.
+      # The analysis engine and the 'bridge' command use the Node TypeScript AST sidecar.
       - name: Install sidecar dependencies
         working-directory: src/PlaywrightPomGenerator.Sidecar.Node
         run: npm ci
+
+      - name: Test sidecar (node:test)
+        working-directory: src/PlaywrightPomGenerator.Sidecar.Node
+        run: node --test "test/*.test.js"
 
       - name: Restore
         run: dotnet restore
@@ -51,6 +55,43 @@ jobs:
 
       - name: Pack
         run: dotnet pack src/PlaywrightPomGenerator.Cli/PlaywrightPomGenerator.Cli.csproj --configuration Release --no-build --output ${{ runner.temp }}/nupkg
+
+      # Smoke test the PACKED tool: the only pre-publish exercise of the real nupkg
+      # sidecar layout (tools/net8.0/any/sidecar/). Asserts the AST engine works from
+      # the shipped sidecar and that the regex escape hatch stays green.
+      - name: Smoke test packed tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/PlaywrightPomGenerator.Cli/PlaywrightPomGenerator.Cli.csproj)
+          dotnet tool install --global PlaywrightPomGenerator --version "$VERSION" --add-source "${{ runner.temp }}/nupkg"
+
+          FIXTURE="${{ runner.temp }}/smoke-app"
+          mkdir -p "$FIXTURE/src/app"
+          cat > "$FIXTURE/package.json" <<'EOF'
+          {
+            "name": "smoke-app",
+            "dependencies": { "@angular/core": "^19.2.0", "@angular/compiler": "^19.2.0" },
+            "devDependencies": { "typescript": "~5.7.0" }
+          }
+          EOF
+          cat > "$FIXTURE/src/app/home.component.ts" <<'EOF'
+          import { Component } from '@angular/core';
+          @Component({
+            selector: 'app-home',
+            template: '<button data-testid="go">Go</button>'
+          })
+          export class HomeComponent {}
+          EOF
+          (cd "$FIXTURE" && npm install --no-audit --no-fund --legacy-peer-deps typescript @angular/compiler)
+
+          OUT=$(ppg app "$FIXTURE" -o "${{ runner.temp }}/smoke-out")
+          echo "$OUT"
+          echo "$OUT" | grep -q "Analysis engine: AST" || { echo "expected the AST engine from the shipped sidecar"; exit 1; }
+
+          OUT2=$(ppg app "$FIXTURE" -o "${{ runner.temp }}/smoke-out-regex" --engine regex --no-component-objects)
+          echo "$OUT2"
+          echo "$OUT2" | grep -q "Analysis engine: regex" || { echo "expected the regex engine banner"; exit 1; }
 
       # Pushing the .nupkg auto-publishes the adjacent .snupkg symbols; the explicit symbols
       # push below is a belt-and-suspenders no-op (--skip-duplicate) in case it does not.

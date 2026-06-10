@@ -12,8 +12,13 @@ public interface ISidecarTransport
     /// <summary>
     /// Invokes a sidecar method and returns its JSON-RPC <c>result</c>.
     /// </summary>
-    /// <param name="method">The sidecar method name (e.g. "discoverInjectionTokens").</param>
-    /// <param name="parameters">The parameters object, serialized to the request's <c>params</c>.</param>
+    /// <param name="method">The sidecar method name (e.g. "discoverInjectionTokens", "analyzeProject").</param>
+    /// <param name="parameters">
+    /// The parameters object, serialized to the request's <c>params</c>. Convention: when the object
+    /// exposes a <c>root</c> string property, implementations point the sidecar's module resolution at
+    /// <c>{root}/node_modules</c> (NODE_PATH) so the analyzed workspace's own typescript and
+    /// @angular/compiler are used.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The <c>result</c> element from the sidecar response.</returns>
     Task<JsonElement> InvokeAsync(string method, object parameters, CancellationToken cancellationToken = default);

@@ -212,6 +212,7 @@ public sealed class GenerateRemoteCommandHandler
             var project = await _analyzer.AnalyzeApplicationAsync(targetPath, cancellationToken)
                 .ConfigureAwait(false);
 
+            ResultPrinter.PrintAnalysisEngine(project.Analysis);
             Console.WriteLine($"Found {project.Components.Count} components in {project.Name}.");
 
             return await _generator.GenerateForApplicationAsync(project, outputPath, cancellationToken)
@@ -227,6 +228,7 @@ public sealed class GenerateRemoteCommandHandler
             var project = await _analyzer.AnalyzeLibraryAsync(targetPath, cancellationToken)
                 .ConfigureAwait(false);
 
+            ResultPrinter.PrintAnalysisEngine(project.Analysis);
             Console.WriteLine($"Found {project.Components.Count} components in {project.Name}.");
 
             return await _generator.GenerateForApplicationAsync(project, outputPath, cancellationToken)
@@ -244,6 +246,8 @@ public sealed class GenerateRemoteCommandHandler
             {
                 var workspace = await _analyzer.AnalyzeWorkspaceAsync(angularRoot, cancellationToken)
                     .ConfigureAwait(false);
+
+                ResultPrinter.PrintAnalysisEngine(workspace.Projects.FirstOrDefault()?.Analysis);
 
                 // Try to find the project that contains the target path
                 var matchingProject = workspace.Projects
@@ -274,6 +278,7 @@ public sealed class GenerateRemoteCommandHandler
                 var project = await _analyzer.AnalyzeApplicationAsync(angularRoot, cancellationToken)
                     .ConfigureAwait(false);
 
+                ResultPrinter.PrintAnalysisEngine(project.Analysis);
                 Console.WriteLine($"Found {project.Components.Count} components in {project.Name}.");
 
                 return await _generator.GenerateForApplicationAsync(project, outputPath, cancellationToken)

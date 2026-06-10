@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PlaywrightPomGenerator.Core.Abstractions;
 using PlaywrightPomGenerator.Core.Models;
 
@@ -8,11 +9,16 @@ namespace PlaywrightPomGenerator.Core.Services;
 
 /// <summary>
 /// Analyzes Angular applications and workspaces to extract component and routing information.
+/// Prefers AST analysis via the Node sidecar (see AngularAnalyzer.Ast.cs) and falls back to
+/// the regex/string analysis in this file when the sidecar is unavailable.
 /// </summary>
 public sealed partial class AngularAnalyzer : IAngularAnalyzer
 {
     private readonly IFileSystem _fileSystem;
     private readonly ILogger<AngularAnalyzer> _logger;
+    private readonly IAstProjectAnalyzer _astProjectAnalyzer;
+    private readonly IPackageInspector _packageInspector;
+    private readonly GeneratorOptions _options;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -25,10 +31,21 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
     /// </summary>
     /// <param name="fileSystem">The file system service.</param>
     /// <param name="logger">The logger.</param>
-    public AngularAnalyzer(IFileSystem fileSystem, ILogger<AngularAnalyzer> logger)
+    /// <param name="astProjectAnalyzer">The sidecar-backed AST project analyzer.</param>
+    /// <param name="packageInspector">The package.json / angular.json inspector.</param>
+    /// <param name="options">The generator options.</param>
+    public AngularAnalyzer(
+        IFileSystem fileSystem,
+        ILogger<AngularAnalyzer> logger,
+        IAstProjectAnalyzer astProjectAnalyzer,
+        IPackageInspector packageInspector,
+        IOptions<GeneratorOptions> options)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _astProjectAnalyzer = astProjectAnalyzer ?? throw new ArgumentNullException(nameof(astProjectAnalyzer));
+        _packageInspector = packageInspector ?? throw new ArgumentNullException(nameof(packageInspector));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
     /// <inheritdoc />
@@ -59,12 +76,29 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
         try
         {
             var content = _fileSystem.ReadAllTextAsync(packageJsonPath).GetAwaiter().GetResult();
-            return content.Contains("@angular/core");
+            try
+            {
+                using var document = JsonDocument.Parse(content);
+                return HasDependency(document.RootElement, "dependencies", "@angular/core")
+                    || HasDependency(document.RootElement, "devDependencies", "@angular/core");
+            }
+            catch (JsonException)
+            {
+                // Malformed package.json — fall back to the permissive substring check.
+                return content.Contains("@angular/core");
+            }
         }
         catch
         {
             return false;
         }
+    }
+
+    private static bool HasDependency(JsonElement root, string sectionName, string packageName)
+    {
+        return root.TryGetProperty(sectionName, out var section)
+            && section.ValueKind == JsonValueKind.Object
+            && section.TryGetProperty(packageName, out _);
     }
 
     /// <inheritdoc />
@@ -116,13 +150,12 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
 
         if (root.TryGetProperty("projects", out var projectsElement))
         {
+            // Collect descriptors first so the AST engine can analyze every
+            // project in one batched sidecar call.
+            var descriptors = new List<(string Name, string ProjectPath, string SourcePath, AngularProjectType Type, string? Prefix)>();
             foreach (var projectProp in projectsElement.EnumerateObject())
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var projectName = projectProp.Name;
                 var projectElement = projectProp.Value;
-
                 var projectType = GetProjectType(projectElement);
 
                 var projectRoot = projectElement.TryGetProperty("root", out var rootProp)
@@ -133,28 +166,46 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
                     ? sourceRootProp.GetString() ?? _fileSystem.CombinePath(projectRoot, "src")
                     : _fileSystem.CombinePath(projectRoot, "src");
 
-                var projectPath = _fileSystem.CombinePath(fullPath, projectRoot);
-                var sourcePath = _fileSystem.CombinePath(fullPath, sourceRoot);
+                var prefix = projectElement.TryGetProperty("prefix", out var prefixProp)
+                    ? prefixProp.GetString()
+                    : null;
 
-                var components = await AnalyzeComponentsAsync(sourcePath, cancellationToken)
-                    .ConfigureAwait(false);
+                descriptors.Add((
+                    projectProp.Name,
+                    _fileSystem.CombinePath(fullPath, projectRoot),
+                    _fileSystem.CombinePath(fullPath, sourceRoot),
+                    projectType,
+                    prefix));
+            }
 
-                var routes = await AnalyzeRoutesAsync(sourcePath, cancellationToken)
-                    .ConfigureAwait(false);
+            var packages = await _packageInspector.InspectAsync(fullPath, cancellationToken).ConfigureAwait(false);
+            var targets = descriptors
+                .Select(d => new AstProjectTarget(d.Name, d.SourcePath, d.Prefix ?? packages.Prefixes.FirstOrDefault()))
+                .ToList();
+            var engine = await RunEngineAsync(fullPath, targets, cancellationToken).ConfigureAwait(false);
+
+            foreach (var descriptor in descriptors)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var (components, routes, report) = await BuildProjectAnalysisAsync(
+                    descriptor.Name, descriptor.SourcePath, engine, packages, cancellationToken).ConfigureAwait(false);
 
                 projects.Add(new AngularProjectInfo
                 {
-                    Name = projectName,
-                    RootPath = projectPath,
-                    SourceRoot = sourcePath,
-                    ProjectType = projectType,
+                    Name = descriptor.Name,
+                    RootPath = descriptor.ProjectPath,
+                    SourceRoot = descriptor.SourcePath,
+                    ProjectType = descriptor.Type,
                     Components = components,
-                    Routes = routes
+                    Routes = routes,
+                    Packages = packages,
+                    Analysis = report
                 });
 
                 _logger.LogInformation(
                     "Analyzed project {ProjectName}: {ComponentCount} components, {RouteCount} routes",
-                    projectName, components.Count, routes.Count);
+                    descriptor.Name, components.Count, routes.Count);
             }
         }
 
@@ -201,10 +252,14 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
             srcPath = fullPath;
         }
 
-        var components = await AnalyzeComponentsAsync(srcPath, cancellationToken).ConfigureAwait(false);
-        var routes = await AnalyzeRoutesAsync(srcPath, cancellationToken).ConfigureAwait(false);
-
         var projectName = _fileSystem.GetFileName(fullPath) ?? "app";
+
+        var packages = await _packageInspector.InspectAsync(fullPath, cancellationToken).ConfigureAwait(false);
+        var targets = new List<AstProjectTarget> { new(projectName, srcPath, packages.Prefixes.FirstOrDefault()) };
+        var engine = await RunEngineAsync(fullPath, targets, cancellationToken).ConfigureAwait(false);
+
+        var (components, routes, report) = await BuildProjectAnalysisAsync(
+            projectName, srcPath, engine, packages, cancellationToken).ConfigureAwait(false);
 
         // Check if this is actually a library
         var projectType = IsLibrary(fullPath)
@@ -218,7 +273,9 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
             SourceRoot = srcPath,
             ProjectType = projectType,
             Components = components,
-            Routes = routes
+            Routes = routes,
+            Packages = packages,
+            Analysis = report
         };
     }
 
@@ -263,10 +320,14 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
             }
         }
 
-        var components = await AnalyzeComponentsAsync(srcPath, cancellationToken).ConfigureAwait(false);
-        var routes = await AnalyzeRoutesAsync(srcPath, cancellationToken).ConfigureAwait(false);
-
         var projectName = _fileSystem.GetFileName(fullPath) ?? "lib";
+
+        var packages = await _packageInspector.InspectAsync(fullPath, cancellationToken).ConfigureAwait(false);
+        var targets = new List<AstProjectTarget> { new(projectName, srcPath, packages.Prefixes.FirstOrDefault()) };
+        var engine = await RunEngineAsync(fullPath, targets, cancellationToken).ConfigureAwait(false);
+
+        var (components, routes, report) = await BuildProjectAnalysisAsync(
+            projectName, srcPath, engine, packages, cancellationToken).ConfigureAwait(false);
 
         return new AngularProjectInfo
         {
@@ -275,7 +336,9 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
             SourceRoot = srcPath,
             ProjectType = AngularProjectType.Library,
             Components = components,
-            Routes = routes
+            Routes = routes,
+            Packages = packages,
+            Analysis = report
         };
     }
 
@@ -342,10 +405,27 @@ public sealed partial class AngularAnalyzer : IAngularAnalyzer
         }
         else if (_fileSystem.DirectoryExists(fullPath))
         {
-            // Directory - scan recursively for components
+            // Directory - analyze via the engine (single-file targets stay on the regex path).
             sourcePath = fullPath;
-            components = await AnalyzeComponentsAsync(fullPath, cancellationToken)
-                .ConfigureAwait(false);
+            var workspaceRoot = FindWorkspaceRoot(fullPath);
+            var packages = await _packageInspector.InspectAsync(workspaceRoot, cancellationToken).ConfigureAwait(false);
+            var targets = new List<AstProjectTarget> { new(projectName, fullPath, packages.Prefixes.FirstOrDefault()) };
+            var engine = await RunEngineAsync(workspaceRoot, targets, cancellationToken).ConfigureAwait(false);
+
+            var (engineComponents, engineRoutes, report) = await BuildProjectAnalysisAsync(
+                projectName, fullPath, engine, packages, cancellationToken).ConfigureAwait(false);
+
+            return new AngularProjectInfo
+            {
+                Name = projectName,
+                RootPath = sourcePath,
+                SourceRoot = sourcePath,
+                ProjectType = AngularProjectType.Application,
+                Components = engineComponents,
+                Routes = engineRoutes,
+                Packages = packages,
+                Analysis = report
+            };
         }
         else
         {

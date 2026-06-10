@@ -11,8 +11,10 @@ public interface ITemplateEngine
     /// Generates a page object class for a component.
     /// </summary>
     /// <param name="component">The component information.</param>
+    /// <param name="context">Generation-time context (what else is generated in this run);
+    /// null disables context-gated features such as child-component composition.</param>
     /// <returns>The generated TypeScript code.</returns>
-    string GeneratePageObject(AngularComponentInfo component);
+    string GeneratePageObject(AngularComponentInfo component, TemplateContext? context = null);
 
     /// <summary>
     /// Generates a selectors file for a component.
@@ -86,8 +88,10 @@ public interface ITemplateEngine
     /// so it works wherever — and however many times — the component renders.
     /// </summary>
     /// <param name="component">The component information.</param>
+    /// <param name="context">Generation-time context (what else is generated in this run);
+    /// null disables context-gated features such as child-component composition.</param>
     /// <returns>The generated TypeScript code.</returns>
-    string GenerateComponentObject(AngularComponentInfo component);
+    string GenerateComponentObject(AngularComponentInfo component, TemplateContext? context = null);
 
     /// <summary>
     /// Generates the abstract base component class that all component objects extend from.
@@ -101,8 +105,10 @@ public interface ITemplateEngine
     /// object from its host page rather than navigating to it directly.
     /// </summary>
     /// <param name="component">The component information.</param>
+    /// <param name="context">Generation-time context; supplies the host-page URL
+    /// resolved from the route tree, when known.</param>
     /// <returns>The generated TypeScript code.</returns>
-    string GenerateComponentObjectTestSpec(AngularComponentInfo component);
+    string GenerateComponentObjectTestSpec(AngularComponentInfo component, TemplateContext? context = null);
 
     /// <summary>
     /// Generates the interface-mock registry runtime: the call recorder, stub store, observable

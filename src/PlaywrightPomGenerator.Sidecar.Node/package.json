@@ -1,13 +1,19 @@
 {
   "name": "playwright-pom-generator-sidecar",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "TypeScript AST sidecar for the Playwright POM generator. Discovers InjectionToken-backed service interfaces and their members so the .NET host can generate the Playwright bridge.",
+  "description": "TypeScript AST sidecar for the Playwright POM generator. Analyzes Angular components, templates, and routes (analyzeProject) and discovers InjectionToken-backed service interfaces (discoverInjectionTokens) so the .NET host can generate Playwright test infrastructure.",
   "main": "sidecar.js",
   "bin": {
     "ppg-sidecar": "sidecar.js"
   },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
   "dependencies": {
     "typescript": "^5.4.0"
+  },
+  "devDependencies": {
+    "@angular/compiler": "^20.0.0"
   }
 }

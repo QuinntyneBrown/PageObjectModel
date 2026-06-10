@@ -34,6 +34,21 @@ public sealed record AngularProjectInfo
     /// Gets the route configuration if available.
     /// </summary>
     public IReadOnlyList<RouteInfo> Routes { get; init; } = [];
+
+    /// <summary>
+    /// Gets the workspace package facts (package.json / angular.json), when inspected.
+    /// </summary>
+    public PackageReport? Packages { get; init; }
+
+    /// <summary>
+    /// Gets the analysis engine report for this project, when available.
+    /// </summary>
+    public AnalysisReport? Analysis { get; init; }
+
+    /// <summary>
+    /// Gets the dist output facts, when dist analysis ran.
+    /// </summary>
+    public DistAnalysis? Dist { get; init; }
 }
 
 /// <summary>
@@ -81,4 +96,56 @@ public sealed record RouteInfo
     /// Gets whether this route has lazy-loaded children.
     /// </summary>
     public bool IsLazyLoaded { get; init; }
+
+    // --- Enrichment (populated by the AST analysis engine) -------------------
+
+    /// <summary>
+    /// Gets the full path from the route root (e.g. "/orders/:id").
+    /// </summary>
+    public string? FullPath { get; init; }
+
+    /// <summary>
+    /// Gets the resolved component file path, when linked.
+    /// </summary>
+    public string? ComponentFilePath { get; init; }
+
+    /// <summary>
+    /// Gets the route parameter names in <see cref="FullPath"/>.
+    /// </summary>
+    public IReadOnlyList<string> PathParameters { get; init; } = [];
+
+    /// <summary>
+    /// Gets whether the route is the ** wildcard.
+    /// </summary>
+    public bool IsWildcard { get; init; }
+
+    /// <summary>
+    /// Gets the pathMatch value, when declared.
+    /// </summary>
+    public string? PathMatch { get; init; }
+
+    /// <summary>
+    /// Gets the route title, when declared.
+    /// </summary>
+    public string? Title { get; init; }
+
+    /// <summary>
+    /// Gets the named outlet, when declared.
+    /// </summary>
+    public string? Outlet { get; init; }
+
+    /// <summary>
+    /// Gets the guard identifier names (canActivate, canMatch, ...).
+    /// </summary>
+    public IReadOnlyList<string> Guards { get; init; } = [];
+
+    /// <summary>
+    /// Gets the literal keys of the route data object.
+    /// </summary>
+    public IReadOnlyList<string> DataKeys { get; init; } = [];
+
+    /// <summary>
+    /// Gets the file the route was declared in.
+    /// </summary>
+    public string? SourceFilePath { get; init; }
 }

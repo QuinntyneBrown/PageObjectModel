@@ -13,9 +13,12 @@ namespace PlaywrightPomGenerator.Core.Services;
 /// </summary>
 public sealed class NodeSidecarTransport : ISidecarTransport
 {
+    private const int TypeScriptMissingExitCode = 2;
+
     private readonly string _nodeExecutable;
     private readonly string _sidecarScriptPath;
     private readonly ILogger<NodeSidecarTransport> _logger;
+    private readonly TimeSpan? _timeout;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NodeSidecarTransport"/> class.
@@ -23,11 +26,13 @@ public sealed class NodeSidecarTransport : ISidecarTransport
     /// <param name="nodeExecutable">The Node executable (e.g. "node").</param>
     /// <param name="sidecarScriptPath">The absolute path to sidecar.js.</param>
     /// <param name="logger">The logger.</param>
-    public NodeSidecarTransport(string nodeExecutable, string sidecarScriptPath, ILogger<NodeSidecarTransport> logger)
+    /// <param name="timeout">Optional per-invocation timeout; null disables it.</param>
+    public NodeSidecarTransport(string nodeExecutable, string sidecarScriptPath, ILogger<NodeSidecarTransport> logger, TimeSpan? timeout = null)
     {
         _nodeExecutable = string.IsNullOrWhiteSpace(nodeExecutable) ? "node" : nodeExecutable;
         _sidecarScriptPath = sidecarScriptPath ?? throw new ArgumentNullException(nameof(sidecarScriptPath));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _timeout = timeout;
     }
 
     /// <inheritdoc />
@@ -37,11 +42,17 @@ public sealed class NodeSidecarTransport : ISidecarTransport
 
         if (!File.Exists(_sidecarScriptPath))
         {
-            throw new FileNotFoundException(
-                $"TypeScript sidecar not found at '{_sidecarScriptPath}'. Ensure the Node sidecar is installed " +
-                "(run 'npm install' in the sidecar directory or ship it with the tool).",
-                _sidecarScriptPath);
+            throw new SidecarUnavailableException(
+                SidecarUnavailableReason.SidecarMissing,
+                $"TypeScript sidecar not found at '{_sidecarScriptPath}'. Set POMGEN_SIDECAR or reinstall the tool.");
         }
+
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (_timeout is { } timeout && timeout > TimeSpan.Zero)
+        {
+            timeoutSource.CancelAfter(timeout);
+        }
+        var linkedToken = timeoutSource.Token;
 
         var request = JsonSerializer.Serialize(new
         {
@@ -74,9 +85,21 @@ public sealed class NodeSidecarTransport : ISidecarTransport
 
         try
         {
-            if (!process.Start())
+            try
             {
-                throw new InvalidOperationException($"Failed to start the Node sidecar via '{_nodeExecutable}'. Is Node.js installed and on PATH?");
+                if (!process.Start())
+                {
+                    throw new SidecarUnavailableException(
+                        SidecarUnavailableReason.NodeMissing,
+                        $"Failed to start the Node sidecar via '{_nodeExecutable}'. Is Node.js installed and on PATH?");
+                }
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                throw new SidecarUnavailableException(
+                    SidecarUnavailableReason.NodeMissing,
+                    $"Failed to start the Node sidecar via '{_nodeExecutable}'. Is Node.js installed and on PATH?",
+                    ex);
             }
 
             process.ErrorDataReceived += (_, e) =>
@@ -88,13 +111,13 @@ public sealed class NodeSidecarTransport : ISidecarTransport
             };
             process.BeginErrorReadLine();
 
-            await process.StandardInput.WriteLineAsync(request.AsMemory(), cancellationToken).ConfigureAwait(false);
-            await process.StandardInput.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await process.StandardInput.WriteLineAsync(request.AsMemory(), linkedToken).ConfigureAwait(false);
+            await process.StandardInput.FlushAsync(linkedToken).ConfigureAwait(false);
             process.StandardInput.Close();
 
             string? responseLine = null;
             string? line;
-            while ((line = await process.StandardOutput.ReadLineAsync(cancellationToken).ConfigureAwait(false)) is not null)
+            while ((line = await process.StandardOutput.ReadLineAsync(linkedToken).ConfigureAwait(false)) is not null)
             {
                 if (line.Length == 0)
                 {
@@ -104,12 +127,20 @@ public sealed class NodeSidecarTransport : ISidecarTransport
                 break;
             }
 
-            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            await process.WaitForExitAsync(linkedToken).ConfigureAwait(false);
 
             if (responseLine is null)
             {
-                throw new InvalidOperationException(
-                    $"The Node sidecar returned no response (exit code {process.ExitCode}). {stderr}".Trim());
+                var detail = stderr.ToString().Trim();
+                if (process.ExitCode == TypeScriptMissingExitCode)
+                {
+                    throw new SidecarUnavailableException(
+                        SidecarUnavailableReason.TypeScriptMissing,
+                        $"The sidecar could not resolve the 'typescript' package. {detail}".Trim());
+                }
+                throw new SidecarUnavailableException(
+                    SidecarUnavailableReason.ProtocolError,
+                    $"The Node sidecar returned no response (exit code {process.ExitCode}). {detail}".Trim());
             }
 
             using var document = JsonDocument.Parse(responseLine);
@@ -127,6 +158,12 @@ public sealed class NodeSidecarTransport : ISidecarTransport
             }
 
             return result.Clone();
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new SidecarUnavailableException(
+                SidecarUnavailableReason.ProtocolError,
+                $"The Node sidecar timed out after {_timeout?.TotalSeconds:F0}s (method '{method}').");
         }
         finally
         {

@@ -35,6 +35,28 @@ public static class Program
         "Enable debug mode. When enabled, the HTML template is included as a comment in generated page object files.");
 
     /// <summary>
+    /// Global option for the analysis engine. The bridge command always uses the
+    /// sidecar and ignores this option.
+    /// </summary>
+    public static Option<string?> EngineOption { get; } = new Option<string?>("--engine",
+        "Analysis engine: 'auto' (AST via the Node sidecar when available, regex fallback), " +
+        "'ast' (require AST analysis, fail if unavailable), 'regex' (source-text analysis only, no Node needed).")
+        .FromAmong("auto", "ast", "regex");
+
+    /// <summary>
+    /// Global option restoring the 1.x output layout: app/workspace/remote do not
+    /// emit the components/ directory (implies no composition).
+    /// </summary>
+    public static Option<bool> NoComponentObjectsOption { get; } = new("--no-component-objects",
+        "Do not emit component objects (components/ directory) for app/workspace/remote generation. Implies --no-composition.");
+
+    /// <summary>
+    /// Global option disabling child-component composition accessors in page objects.
+    /// </summary>
+    public static Option<bool> NoCompositionOption { get; } = new("--no-composition",
+        "Do not embed typed child component object accessors in page objects.");
+
+    /// <summary>
     /// Main entry point.
     /// </summary>
     /// <param name="args">Command line arguments.</param>
@@ -46,12 +68,18 @@ public static class Program
         preParseCommand.AddGlobalOption(HeaderOption);
         preParseCommand.AddGlobalOption(TestSuffixOption);
         preParseCommand.AddGlobalOption(DebugOption);
+        preParseCommand.AddGlobalOption(EngineOption);
+        preParseCommand.AddGlobalOption(NoComponentObjectsOption);
+        preParseCommand.AddGlobalOption(NoCompositionOption);
         var preParseResult = preParseCommand.Parse(args);
         var headerValue = preParseResult.GetValueForOption(HeaderOption);
         var testSuffixValue = preParseResult.GetValueForOption(TestSuffixOption);
         var debugValue = preParseResult.GetValueForOption(DebugOption);
+        var engineValue = preParseResult.GetValueForOption(EngineOption);
+        var noComponentObjects = preParseResult.GetValueForOption(NoComponentObjectsOption);
+        var noComposition = preParseResult.GetValueForOption(NoCompositionOption);
 
-        using var host = CreateHost(args, headerValue, testSuffixValue, debugValue);
+        using var host = CreateHost(args, headerValue, testSuffixValue, debugValue, engineValue, noComponentObjects, noComposition);
         var rootCommand = BuildRootCommand(host.Services);
 
         return await rootCommand.InvokeAsync(args).ConfigureAwait(false);
@@ -64,8 +92,11 @@ public static class Program
     /// <param name="headerOverride">Optional header template override from CLI.</param>
     /// <param name="testSuffixOverride">Optional test suffix override from CLI.</param>
     /// <param name="debugMode">Whether debug mode is enabled.</param>
+    /// <param name="engineOverride">Optional analysis engine override from CLI.</param>
+    /// <param name="noComponentObjects">Whether app/workspace/remote skip emitting component objects.</param>
+    /// <param name="noComposition">Whether page objects skip child component composition.</param>
     /// <returns>The configured host.</returns>
-    public static IHost CreateHost(string[] args, string? headerOverride = null, string? testSuffixOverride = null, bool debugMode = false)
+    public static IHost CreateHost(string[] args, string? headerOverride = null, string? testSuffixOverride = null, bool debugMode = false, string? engineOverride = null, bool noComponentObjects = false, bool noComposition = false)
     {
         return Host.CreateDefaultBuilder(args)
             .ConfigureAppConfiguration((context, config) =>
@@ -83,7 +114,7 @@ public static class Program
             })
             .ConfigureServices((context, services) =>
             {
-                ConfigureServices(services, context.Configuration, headerOverride, testSuffixOverride, debugMode);
+                ConfigureServices(services, context.Configuration, headerOverride, testSuffixOverride, debugMode, engineOverride, noComponentObjects, noComposition);
             })
             .Build();
     }
@@ -100,8 +131,9 @@ public static class Program
         {
             var path = context.ParseResult.GetValueForArgument(appCommand.PathArgument);
             var output = context.ParseResult.GetValueForOption(appCommand.OutputOption);
+            var dist = context.ParseResult.GetValueForOption(appCommand.DistOption);
             var handler = services.GetRequiredService<GenerateAppCommandHandler>();
-            context.ExitCode = await handler.ExecuteAsync(path, output, context.GetCancellationToken()).ConfigureAwait(false);
+            context.ExitCode = await handler.ExecuteAsync(path, output, dist, context.GetCancellationToken()).ConfigureAwait(false);
         });
 
         var workspaceCommand = new GenerateWorkspaceCommand();
@@ -110,8 +142,9 @@ public static class Program
             var path = context.ParseResult.GetValueForArgument(workspaceCommand.PathArgument);
             var output = context.ParseResult.GetValueForOption(workspaceCommand.OutputOption);
             var project = context.ParseResult.GetValueForOption(workspaceCommand.ProjectOption);
+            var dist = context.ParseResult.GetValueForOption(workspaceCommand.DistOption);
             var handler = services.GetRequiredService<GenerateWorkspaceCommandHandler>();
-            context.ExitCode = await handler.ExecuteAsync(path, output, project, context.GetCancellationToken()).ConfigureAwait(false);
+            context.ExitCode = await handler.ExecuteAsync(path, output, project, dist, context.GetCancellationToken()).ConfigureAwait(false);
         });
 
         var artifactsCommand = new GenerateArtifactsCommand();
@@ -190,10 +223,14 @@ public static class Program
             remoteCommand
         };
 
-        // Add global options for header, test suffix, and debug mode
+        // Add global options for header, test suffix, debug mode, analysis engine,
+        // and output-shape escape hatches
         rootCommand.AddGlobalOption(HeaderOption);
         rootCommand.AddGlobalOption(TestSuffixOption);
         rootCommand.AddGlobalOption(DebugOption);
+        rootCommand.AddGlobalOption(EngineOption);
+        rootCommand.AddGlobalOption(NoComponentObjectsOption);
+        rootCommand.AddGlobalOption(NoCompositionOption);
 
         return rootCommand;
     }
@@ -206,48 +243,80 @@ public static class Program
     /// <param name="headerOverride">Optional header template override from CLI.</param>
     /// <param name="testSuffixOverride">Optional test suffix override from CLI.</param>
     /// <param name="debugMode">Whether debug mode is enabled.</param>
+    /// <param name="engineOverride">Optional analysis engine override from CLI.</param>
+    /// <param name="noComponentObjects">Whether app/workspace/remote skip emitting component objects.</param>
+    /// <param name="noComposition">Whether page objects skip child component composition.</param>
     public static void ConfigureServices(
         IServiceCollection services,
         IConfiguration configuration,
         string? headerOverride = null,
         string? testSuffixOverride = null,
-        bool debugMode = false)
+        bool debugMode = false,
+        string? engineOverride = null,
+        bool noComponentObjects = false,
+        bool noComposition = false)
     {
         // Configuration
         services.Configure<GeneratorOptions>(configuration.GetSection(GeneratorOptions.SectionName));
 
-        // Apply CLI overrides if provided
-        if (headerOverride is not null || testSuffixOverride is not null || debugMode)
+        // CLI overrides win over file/env config; ToolVersion tracks the assembly
+        // version so releases no longer need a hand-synced default.
+        services.PostConfigure<GeneratorOptions>(options =>
         {
-            services.PostConfigure<GeneratorOptions>(options =>
+            if (headerOverride is not null)
             {
-                if (headerOverride is not null)
-                {
-                    options.FileHeader = headerOverride;
-                }
-                if (testSuffixOverride is not null)
-                {
-                    options.TestFileSuffix = testSuffixOverride;
-                }
-                if (debugMode)
-                {
-                    options.DebugMode = true;
-                }
-            });
-        }
+                options.FileHeader = headerOverride;
+            }
+            if (testSuffixOverride is not null)
+            {
+                options.TestFileSuffix = testSuffixOverride;
+            }
+            if (debugMode)
+            {
+                options.DebugMode = true;
+            }
+            if (engineOverride is not null && Enum.TryParse<AnalysisEngine>(engineOverride, ignoreCase: true, out var engine))
+            {
+                options.AnalysisEngine = engine;
+            }
+            if (noComponentObjects)
+            {
+                options.EmitComponentObjects = false;
+                options.EmitComposition = false;
+            }
+            if (noComposition)
+            {
+                options.EmitComposition = false;
+            }
+            if (options.ToolVersion == new GeneratorOptions().ToolVersion
+                && GetAssemblyVersion() is { } assemblyVersion)
+            {
+                options.ToolVersion = assemblyVersion;
+            }
+        });
 
         // Core services
         services.AddSingleton<IFileSystem, FileSystemService>();
         services.AddSingleton<IAngularAnalyzer, AngularAnalyzer>();
         services.AddSingleton<ITemplateEngine, TemplateEngine>();
         services.AddSingleton<ICodeGenerator, CodeGenerator>();
+        services.AddSingleton<IPackageInspector, PackageInspector>();
+        services.AddSingleton<IDistAnalyzer, DistAnalyzer>();
 
-        // TypeScript AST sidecar (Node) used by the bridge command
-        services.AddSingleton<ISidecarTransport>(sp => new NodeSidecarTransport(
-            Environment.GetEnvironmentVariable("POMGEN_NODE") ?? "node",
-            SidecarLocator.Locate(),
-            sp.GetRequiredService<ILogger<NodeSidecarTransport>>()));
+        // TypeScript AST sidecar (Node): analyzeProject for the analysis engine,
+        // discoverInjectionTokens for the bridge command.
+        services.AddSingleton<ISidecarTransport>(sp =>
+        {
+            var timeoutSeconds = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<GeneratorOptions>>()
+                .Value.SidecarTimeoutSeconds;
+            return new NodeSidecarTransport(
+                Environment.GetEnvironmentVariable("POMGEN_NODE") ?? "node",
+                SidecarLocator.Locate(),
+                sp.GetRequiredService<ILogger<NodeSidecarTransport>>(),
+                timeoutSeconds > 0 ? TimeSpan.FromSeconds(timeoutSeconds) : null);
+        });
         services.AddSingleton<ITypeScriptAnalyzer, TypeScriptAnalyzer>();
+        services.AddSingleton<IAstProjectAnalyzer, AstProjectAnalyzer>();
         services.AddSingleton<IGitService, GitService>();
 
         // Command handlers
@@ -259,5 +328,23 @@ public static class Program
         services.AddTransient<GenerateArtifactsCommandHandler>();
         services.AddTransient<GenerateSignalRMockCommandHandler>();
         services.AddTransient<GenerateRemoteCommandHandler>();
+    }
+
+    /// <summary>
+    /// Gets the tool version from the assembly (the csproj &lt;Version&gt;),
+    /// without any SourceLink commit suffix.
+    /// </summary>
+    private static string? GetAssemblyVersion()
+    {
+        var informational = typeof(Program).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), inherit: false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion;
+        if (string.IsNullOrWhiteSpace(informational))
+        {
+            return null;
+        }
+        var plusIndex = informational.IndexOf('+');
+        return plusIndex > 0 ? informational[..plusIndex] : informational;
     }
 }

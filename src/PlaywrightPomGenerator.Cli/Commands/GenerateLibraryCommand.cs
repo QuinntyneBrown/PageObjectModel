@@ -88,6 +88,8 @@ public sealed class GenerateLibraryCommandHandler
             var project = await _analyzer.AnalyzeLibraryAsync(path, cancellationToken)
                 .ConfigureAwait(false);
 
+            ResultPrinter.PrintAnalysisEngine(project.Analysis);
+
             _logger.LogInformation(
                 "Found {ComponentCount} components in library {ProjectName}",
                 project.Components.Count, project.Name);

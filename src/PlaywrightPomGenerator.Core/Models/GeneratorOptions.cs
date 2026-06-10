@@ -54,4 +54,33 @@ public sealed class GeneratorOptions
     /// When enabled, the HTML template is included as a comment in generated page object files.
     /// </summary>
     public bool DebugMode { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets the analysis engine. Auto prefers AST analysis via the Node
+    /// sidecar and falls back to regex analysis when unavailable.
+    /// </summary>
+    public AnalysisEngine AnalysisEngine { get; set; } = AnalysisEngine.Auto;
+
+    /// <summary>
+    /// Gets or sets whether app/workspace/remote generation also emits component
+    /// objects (the components/ directory).
+    /// </summary>
+    public bool EmitComponentObjects { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether page objects embed typed accessors for the child
+    /// component objects found in their templates.
+    /// </summary>
+    public bool EmitComposition { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether the generated urls.config.ts includes the example
+    /// API_ENDPOINTS block.
+    /// </summary>
+    public bool EmitApiEndpointsExample { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets the sidecar invocation timeout in seconds (0 disables the timeout).
+    /// </summary>
+    public int SidecarTimeoutSeconds { get; set; } = 600;
 }

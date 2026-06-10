@@ -14,11 +14,16 @@ public sealed class GeneratorOptionsTests
         // Assert
         options.FileHeader.Should().BeEmpty("because by default no header is included");
         options.TestFileSuffix.Should().Be("spec");
-        options.ToolVersion.Should().Be("1.9.0");
+        options.ToolVersion.Should().NotBeNullOrEmpty("the compiled default is a fallback; the CLI replaces it with the assembly version");
         options.OutputDirectoryName.Should().Be("e2e");
         options.GenerateJsDocComments.Should().BeTrue();
         options.DefaultTimeout.Should().Be(30000);
         options.BaseUrlPlaceholder.Should().Be("http://localhost:4200");
+        options.AnalysisEngine.Should().Be(AnalysisEngine.Auto);
+        options.EmitComponentObjects.Should().BeTrue();
+        options.EmitComposition.Should().BeTrue();
+        options.EmitApiEndpointsExample.Should().BeFalse();
+        options.SidecarTimeoutSeconds.Should().Be(600);
     }
 
     [Fact]
@@ -61,7 +66,12 @@ public sealed class GeneratorOptionsTests
             OutputDirectoryName = "tests",
             GenerateJsDocComments = false,
             DefaultTimeout = 60000,
-            BaseUrlPlaceholder = "http://localhost:3000"
+            BaseUrlPlaceholder = "http://localhost:3000",
+            AnalysisEngine = AnalysisEngine.Regex,
+            EmitComponentObjects = false,
+            EmitComposition = false,
+            EmitApiEndpointsExample = true,
+            SidecarTimeoutSeconds = 0
         };
 
         // Assert
@@ -72,5 +82,10 @@ public sealed class GeneratorOptionsTests
         options.GenerateJsDocComments.Should().BeFalse();
         options.DefaultTimeout.Should().Be(60000);
         options.BaseUrlPlaceholder.Should().Be("http://localhost:3000");
+        options.AnalysisEngine.Should().Be(AnalysisEngine.Regex);
+        options.EmitComponentObjects.Should().BeFalse();
+        options.EmitComposition.Should().BeFalse();
+        options.EmitApiEndpointsExample.Should().BeTrue();
+        options.SidecarTimeoutSeconds.Should().Be(0);
     }
 }

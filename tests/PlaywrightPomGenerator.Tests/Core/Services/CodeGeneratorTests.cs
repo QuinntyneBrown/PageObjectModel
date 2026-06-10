@@ -33,13 +33,13 @@ public sealed class CodeGeneratorTests
         _templateEngine.GenerateConfig(Arg.Any<AngularProjectInfo>()).Returns("// config");
         _templateEngine.GenerateFixture(Arg.Any<AngularProjectInfo>()).Returns("// fixture");
         _templateEngine.GenerateHelpers().Returns("// helpers");
-        _templateEngine.GeneratePageObject(Arg.Any<AngularComponentInfo>()).Returns("// page object");
+        _templateEngine.GeneratePageObject(Arg.Any<AngularComponentInfo>(), Arg.Any<TemplateContext?>()).Returns("// page object");
         _templateEngine.GenerateSelectors(Arg.Any<AngularComponentInfo>()).Returns("// selectors");
         _templateEngine.GenerateTestSpec(Arg.Any<AngularComponentInfo>()).Returns("// test spec");
         _templateEngine.GenerateSignalRMock().Returns("// signalr mock");
         _templateEngine.GenerateBaseComponent().Returns("// base component");
-        _templateEngine.GenerateComponentObject(Arg.Any<AngularComponentInfo>()).Returns("// component object");
-        _templateEngine.GenerateComponentObjectTestSpec(Arg.Any<AngularComponentInfo>()).Returns("// component spec");
+        _templateEngine.GenerateComponentObject(Arg.Any<AngularComponentInfo>(), Arg.Any<TemplateContext?>()).Returns("// component object");
+        _templateEngine.GenerateComponentObjectTestSpec(Arg.Any<AngularComponentInfo>(), Arg.Any<TemplateContext?>()).Returns("// component spec");
         _templateEngine.GenerateInterfaceMockRegistry().Returns("// registry");
         _templateEngine.GenerateInterfaceMock(Arg.Any<InjectionTokenInterface>()).Returns("// mock");
         _templateEngine.GenerateInterfaceMockProviders(Arg.Any<IReadOnlyList<InjectionTokenInterface>>()).Returns("// providers");

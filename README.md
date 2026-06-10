@@ -8,16 +8,19 @@ A powerful .NET CLI tool that automatically generates Playwright Page Object Mod
 
 ## Features
 
-- **Automatic Angular Analysis** - Intelligently scans Angular workspaces, applications, and libraries to detect components, templates, and routing
+- **AST-Powered Angular Analysis** - A Node sidecar parses your app with the TypeScript compiler and your app's own `@angular/compiler`: `@if`/`@for` control flow, signal inputs/outputs, Material/CDK widgets, reactive forms, label/aria associations, and child component tags — with an automatic regex fallback when Node isn't available (`--engine`)
+- **Real Route Linkage** - Resolves the full route tree (`provideRouter`, `RouterModule.forRoot/forChild`, lazy `loadComponent`/`loadChildren`, tsconfig path aliases) and links every routed component to its URL: `urls.config.ts` gets real paths, parameterized routes become typed functions, and `navigate({ orderId })` is typed per page
+- **Component Composition** - Page objects embed typed accessors for the component objects rendered in their templates (`kpiCardAt(i)`, `kpiCardByText(...)`, `kpiCardCount()`), with imports that always resolve
+- **Typed Form Helpers** - Discovered reactive forms produce a `FormData` interface plus `fill*Form(data)`/`submit*Form()` driving each control with the right interaction
+- **Material Widget Interactions** - Control-aware methods for mat-select (CDK overlay handling), checkbox, slide-toggle, radio, datepicker, autocomplete, menus, tabs, paginators, and dialogs
+- **Repeated & Conditional Content** - `@for`/`*ngFor` elements get `*At(i)`/`*ByText`/`*Count()` accessors (strict-mode safe); `@if`/`*ngIf` elements get `expect*Visible()`/`expect*Hidden()` pairs and are excluded from scaffolded assertions
+- **Typed Table Columns** - `matColumnDef` metadata produces `getXCell(row, 'name' | 'status')`, column cell accessors, row-by-text lookup, and header assertions
 - **BasePage Pattern** - All generated page objects extend from a common BasePage class with shared functionality
-- **Page Object Generation** - Creates type-safe TypeScript page objects with properly typed locators and methods
-- **Component Object Generation** - Creates root-`Locator`-scoped component objects (`ppg component`) for non-routable components, so dashboard-style apps can be verified component-by-component and composed inside pages
-- **Service Interface Mocks** - Creates window-exposed recording mocks of `InjectionToken`-backed service interfaces (`ppg bridge`), so Playwright tests can verify calls, stub return values, and push observable values to drive the UI (uses a TypeScript-compiler sidecar for accurate type analysis)
+- **Component Object Generation** - Creates root-`Locator`-scoped component objects (`ppg component`, and automatically from `ppg app`) for non-routable components, so dashboard-style apps can be verified component-by-component and composed inside pages
+- **Service Interface Mocks** - Creates window-exposed recording mocks of `InjectionToken`-backed service interfaces (`ppg bridge`), so Playwright tests can verify calls, stub return values, and push observable values to drive the UI
+- **Dist Output Analysis** - Reads the build output's `<base href>` into the generated `baseURL` and confirms prerendered routes (`--dist`, auto-detected)
 - **Inline Template Support** - Parses both external HTML templates and inline templates in component files
-- **Angular Material Support** - Detects and creates selectors for mat-button, mat-table, mat-form-field, and other Material components
-- **Click Handler Detection** - Automatically generates click methods for elements with `(click)` event bindings
-- **Table Accessor Methods** - Generates comprehensive table methods (getRows, getHeaders, getRowCount, clickRow, etc.)
-- **Test Scaffolding** - Generates complete Playwright test specs with fixture integration
+- **Test Scaffolding** - Generates complete Playwright test specs with fixture integration and `beforeEach` navigation for routable pages
 - **SignalR Mock Support** - Generates RxJS-based SignalR mock fixtures for real-time application testing
 - **Workspace Support** - Handle complex Angular workspaces with multiple applications and libraries
 - **Remote Repository Support** - Generate tests directly from a git URL (GitHub, GitLab, Bitbucket, Azure DevOps, or any git host) without manually cloning
@@ -242,7 +245,62 @@ ppg signalr-mock ./e2e/mocks
 
 # Enable debug mode (includes HTML template as comments in page objects)
 --debug
+
+# Analysis engine (default: auto). See "Analysis Engines" below.
+--engine auto|ast|regex
+
+# Restore the 1.x output layout (no components/ directory from app/workspace/remote;
+# implies --no-composition)
+--no-component-objects
+
+# Keep component objects but don't embed typed child accessors in page objects
+--no-composition
 ```
+
+## Analysis Engines
+
+`ppg` analyzes Angular source with one of two engines:
+
+- **AST** (preferred): a Node sidecar parses your app with the **TypeScript compiler
+  and your app's own `@angular/compiler`** (resolved from its `node_modules`, so the
+  template syntax always matches your Angular version). This understands
+  `@if`/`@for`/`@switch` and `*ngIf`/`*ngFor` control flow, signal-based
+  `input()`/`output()`/`model()` ports, label/aria associations, Material/CDK widgets,
+  `matColumnDef` table columns, reactive forms, child component tags (composition), and
+  the full route tree — including `provideRouter`, `RouterModule.forRoot/forChild`,
+  `loadComponent`/`loadChildren` lazy imports, and tsconfig path aliases — linking every
+  routed component to its real URL (with `:params`).
+- **regex**: the original source-text analysis. No Node required, lower fidelity.
+
+`--engine auto` (the default) uses AST when Node.js and the analyzed app's
+`node_modules` are available and falls back to regex with an explanatory banner
+otherwise. `--engine ast` makes degradation a hard error; `--engine regex` opts out of
+the sidecar entirely. Every run prints which engine produced the analysis:
+
+```
+Analysis engine: AST (typescript 5.7.3, @angular/compiler 19.2.25)
+Analysis engine: regex (Node.js not found — install Node.js 18+ or set POMGEN_NODE to enable AST analysis)
+```
+
+### Node requirement matrix
+
+| Command | Node.js |
+|---|---|
+| `app`, `workspace`, `lib`, `component`, `artifacts`, `remote` | Optional — AST analysis when available, regex fallback otherwise |
+| `bridge` | **Required** (TypeScript AST sidecar) |
+| `signalr-mock` | Not used |
+
+Node.js 18+ is recommended. The sidecar resolves `typescript` and
+`@angular/compiler` from the **analyzed app's** `node_modules` — run `npm install`
+in the app to get full-fidelity analysis.
+
+### Dist output analysis (`--dist`)
+
+`app` and `workspace` accept `--dist <path>` (auto-detected at
+`dist/{project}/browser`, `dist/{project}`, or `dist` when omitted). The build
+output contributes deployment truth: the `<base href>` flows into the generated
+`baseURL`/`URLS.base`, and prerendered route directories are annotated in
+`urls.config.ts`.
 
 ## Generated Output
 
@@ -696,11 +754,30 @@ For these elements, the generated page object includes:
 ### Runtime
 - .NET 8.0 SDK or later
 - Angular application, library, or workspace
+- Node.js 18+ — optional, enables AST analysis (see "Analysis Engines"); required only for `ppg bridge`
 - `git` CLI (required for `ppg remote` command)
 
 ### For Generated Tests
-- Node.js 16+ and npm
+- Node.js 18+ and npm
 - @playwright/test package
+
+## Upgrading to 2.0
+
+2.0 regenerates substantially richer output. The notable shape changes when you
+regenerate over a 1.x tree:
+
+- `ppg app`/`workspace`/`remote` now also emit a `components/` directory and page
+  objects embed typed child component accessors — `--no-component-objects`
+  restores the 1.x layout.
+- `urls.config.ts` uses real route paths from the route tree (parameterized routes
+  become functions) and no longer includes the example `API_ENDPOINTS` block
+  (re-enable with `"EmitApiEndpointsExample": true`).
+- Routable page specs navigate in `beforeEach`; conditional elements are no longer
+  asserted unconditionally.
+- `BasePage`/`BaseComponent` gained shared control helpers (`setChecked`,
+  `selectMatOption`, ...) and `BasePage.navigate` accepts optional typed params.
+- `--engine regex --no-component-objects` reproduces 1.x-shaped output if you need
+  to migrate gradually.
 
 ### Supported Platforms
 - Windows 10/11

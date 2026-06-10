@@ -1,6 +1,9 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NSubstitute;
+using PlaywrightPomGenerator.Core.Abstractions;
+using PlaywrightPomGenerator.Core.Models;
 using PlaywrightPomGenerator.Core.Services;
 using PlaywrightPomGenerator.Tests.TestUtilities;
 
@@ -10,13 +13,29 @@ public sealed class AngularAnalyzerTests
 {
     private readonly MockFileSystem _fileSystem;
     private readonly ILogger<AngularAnalyzer> _logger;
+    private readonly IAstProjectAnalyzer _astAnalyzer;
+    private readonly IPackageInspector _packageInspector;
     private readonly AngularAnalyzer _analyzer;
 
     public AngularAnalyzerTests()
     {
         _fileSystem = new MockFileSystem();
         _logger = Substitute.For<ILogger<AngularAnalyzer>>();
-        _analyzer = new AngularAnalyzer(_fileSystem, _logger);
+
+        // A throwing AST stub keeps these tests on the regex path (Auto falls back),
+        // so all pre-existing expectations hold unchanged.
+        _astAnalyzer = Substitute.For<IAstProjectAnalyzer>();
+        _astAnalyzer.AnalyzeProjectAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlyList<AstProjectTarget>>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns<Task<AstProjectAnalysis>>(_ => throw new SidecarUnavailableException(
+                SidecarUnavailableReason.NodeMissing, "test stub: no sidecar"));
+
+        _packageInspector = Substitute.For<IPackageInspector>();
+        _packageInspector.InspectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(PackageReport.Empty);
+
+        _analyzer = new AngularAnalyzer(
+            _fileSystem, _logger, _astAnalyzer, _packageInspector, Options.Create(new GeneratorOptions()));
     }
 
     [Fact]
@@ -327,7 +346,8 @@ public sealed class AngularAnalyzerTests
     public void Constructor_WithNullFileSystem_ShouldThrowArgumentNullException()
     {
         // Act
-        var act = () => new AngularAnalyzer(null!, _logger);
+        var act = () => new AngularAnalyzer(
+            null!, _logger, _astAnalyzer, _packageInspector, Options.Create(new GeneratorOptions()));
 
         // Assert
         act.Should().Throw<ArgumentNullException>();
@@ -337,7 +357,30 @@ public sealed class AngularAnalyzerTests
     public void Constructor_WithNullLogger_ShouldThrowArgumentNullException()
     {
         // Act
-        var act = () => new AngularAnalyzer(_fileSystem, null!);
+        var act = () => new AngularAnalyzer(
+            _fileSystem, null!, _astAnalyzer, _packageInspector, Options.Create(new GeneratorOptions()));
+
+        // Assert
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Constructor_WithNullAstAnalyzer_ShouldThrowArgumentNullException()
+    {
+        // Act
+        var act = () => new AngularAnalyzer(
+            _fileSystem, _logger, null!, _packageInspector, Options.Create(new GeneratorOptions()));
+
+        // Assert
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Constructor_WithNullPackageInspector_ShouldThrowArgumentNullException()
+    {
+        // Act
+        var act = () => new AngularAnalyzer(
+            _fileSystem, _logger, _astAnalyzer, null!, Options.Create(new GeneratorOptions()));
 
         // Assert
         act.Should().Throw<ArgumentNullException>();

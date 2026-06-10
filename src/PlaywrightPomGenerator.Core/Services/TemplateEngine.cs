@@ -7,8 +7,12 @@ namespace PlaywrightPomGenerator.Core.Services;
 
 /// <summary>
 /// Renders code templates for Playwright Page Object Model files.
+/// Enrichment-driven emission (typed control interactions, forms, repeated and
+/// conditional content, typed tables) lives in TemplateEngine.V2.cs; every v2
+/// feature no-ops when its model data is absent, so regex-engine output is
+/// unchanged.
 /// </summary>
-public sealed class TemplateEngine : ITemplateEngine
+public sealed partial class TemplateEngine : ITemplateEngine
 {
     private readonly GeneratorOptions _options;
 
@@ -39,13 +43,14 @@ public sealed class TemplateEngine : ITemplateEngine
     }
 
     /// <inheritdoc />
-    public string GeneratePageObject(AngularComponentInfo component)
+    public string GeneratePageObject(AngularComponentInfo component, TemplateContext? context = null)
     {
         ArgumentNullException.ThrowIfNull(component);
 
         var sb = new StringBuilder();
         var className = GetPageObjectClassName(component.Name);
         var fileName = $"{ToKebabCase(component.Name)}.page.ts";
+        var composableChildren = GetComposableChildren(component, context);
 
         var header = GenerateFileHeader(fileName);
         if (!string.IsNullOrEmpty(header))
@@ -73,7 +78,10 @@ public sealed class TemplateEngine : ITemplateEngine
         {
             sb.AppendLine("import { URLS } from '../configs/urls.config';");
         }
+        AppendCompositionImports(sb, composableChildren, "../components/");
         sb.AppendLine();
+
+        AppendFormDataInterfaces(sb, component);
 
         if (_options.GenerateJsDocComments)
         {
@@ -102,6 +110,14 @@ public sealed class TemplateEngine : ITemplateEngine
                 sb.AppendLine($"   * Locator for the {selector.PropertyName} element.");
                 sb.AppendLine($"   * Element type: {selector.ElementType}");
                 sb.AppendLine($"   * Strategy: {selector.Strategy}");
+                if (selector.IsRepeated)
+                {
+                    sb.AppendLine("   * Matches ALL repeated instances — use the *At/*ByText/*Count accessors.");
+                }
+                if (selector.IsConditional)
+                {
+                    sb.AppendLine($"   * Rendered conditionally{(selector.ConditionText is not null ? $" ({selector.ConditionText})" : "")}.");
+                }
                 sb.AppendLine("   */");
             }
             sb.AppendLine($"  readonly {ToCamelCase(selector.PropertyName)}: Locator;");
@@ -137,25 +153,47 @@ public sealed class TemplateEngine : ITemplateEngine
         {
             sb.AppendLine("  /**");
             sb.AppendLine("   * Navigate to this page.");
+            if (component.IsRoutable && component.RouteParams.Count > 0)
+            {
+                sb.AppendLine($"   * @param params - Route parameters of '{component.RoutePath}'.");
+            }
             sb.AppendLine("   * @returns Promise that resolves when navigation is complete.");
             sb.AppendLine("   */");
         }
-        sb.AppendLine("  async navigate(): Promise<void> {");
-        if (component.IsRoutable)
+        if (component.IsRoutable && component.RouteParams.Count > 0)
         {
             var urlKey = ToCamelCase(className);
-            sb.AppendLine($"    await this.page.goto(URLS.{urlKey});");
+            var paramsType = string.Join("; ", component.RouteParams.Select(p => $"{p}: string"));
+            var paramsArgs = string.Join(", ", component.RouteParams.Select(p => $"params.{p}"));
+            sb.AppendLine($"  async navigate(params: {{ {paramsType} }}): Promise<void> {{");
+            sb.AppendLine($"    await this.page.goto(URLS.{urlKey}({paramsArgs}));");
             sb.AppendLine("    await this.waitForLoad();");
         }
         else
         {
-            sb.AppendLine($"    throw new Error('{className} is not a routable component. Use it as a child component within a page.');");
+            sb.AppendLine("  async navigate(): Promise<void> {");
+            if (component.IsRoutable)
+            {
+                var urlKey = ToCamelCase(className);
+                sb.AppendLine($"    await this.page.goto(URLS.{urlKey});");
+                sb.AppendLine("    await this.waitForLoad();");
+            }
+            else
+            {
+                sb.AppendLine($"    throw new Error('{className} is not a routable component. Use it as a child component within a page.');");
+            }
         }
         sb.AppendLine("  }");
         sb.AppendLine();
 
+        // Typed accessors for embedded component objects (context-gated).
+        AppendChildComponentAccessors(sb, component, composableChildren, "this.page");
+
         // Generate action methods for common element types (rooted on the page)
         GenerateActionMethods(sb, component.Selectors, "this.page");
+
+        // Typed form helpers (no-op without discovered forms).
+        AppendFormMethods(sb, component, "this.page");
 
         // Wait for load method (implements abstract method from BasePage)
         if (_options.GenerateJsDocComments)
@@ -167,6 +205,11 @@ public sealed class TemplateEngine : ITemplateEngine
         }
         sb.AppendLine("  async waitForLoad(): Promise<void> {");
         sb.AppendLine("    await this.page.waitForSelector(this.componentSelector);");
+        if (FindLoadAnchor(component) is { } anchor)
+        {
+            // One stable anchor element confirms real content rendered, not just the host tag.
+            sb.AppendLine($"    await this.{ToCamelCase(anchor.PropertyName)}.first().waitFor({{ state: 'visible' }});");
+        }
         sb.AppendLine("  }");
 
         sb.AppendLine("}");
@@ -175,13 +218,14 @@ public sealed class TemplateEngine : ITemplateEngine
     }
 
     /// <inheritdoc />
-    public string GenerateComponentObject(AngularComponentInfo component)
+    public string GenerateComponentObject(AngularComponentInfo component, TemplateContext? context = null)
     {
         ArgumentNullException.ThrowIfNull(component);
 
         var sb = new StringBuilder();
         var className = GetComponentObjectClassName(component.Name);
         var fileName = $"{ToKebabCase(component.Name)}.component.ts";
+        var composableChildren = GetComposableChildren(component, context);
 
         var header = GenerateFileHeader(fileName);
         if (!string.IsNullOrEmpty(header))
@@ -206,7 +250,10 @@ public sealed class TemplateEngine : ITemplateEngine
 
         sb.AppendLine("import { Locator, expect } from '@playwright/test';");
         sb.AppendLine("import { BaseComponent } from './base.component';");
+        AppendCompositionImports(sb, composableChildren, "./");
         sb.AppendLine();
+
+        AppendFormDataInterfaces(sb, component);
 
         if (_options.GenerateJsDocComments)
         {
@@ -235,6 +282,14 @@ public sealed class TemplateEngine : ITemplateEngine
                 sb.AppendLine($"   * Locator for the {selector.PropertyName} element.");
                 sb.AppendLine($"   * Element type: {selector.ElementType}");
                 sb.AppendLine($"   * Strategy: {selector.Strategy}");
+                if (selector.IsRepeated)
+                {
+                    sb.AppendLine("   * Matches ALL repeated instances — use the *At/*ByText/*Count accessors.");
+                }
+                if (selector.IsConditional)
+                {
+                    sb.AppendLine($"   * Rendered conditionally{(selector.ConditionText is not null ? $" ({selector.ConditionText})" : "")}.");
+                }
                 sb.AppendLine("   */");
             }
             sb.AppendLine($"  readonly {ToCamelCase(selector.PropertyName)}: Locator;");
@@ -265,8 +320,14 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("  }");
         sb.AppendLine();
 
+        // Typed accessors for nested component objects (context-gated), rooted on this.root.
+        AppendChildComponentAccessors(sb, component, composableChildren, "this.root");
+
         // Action + assertion methods, all rooted on this.root. No navigate() — composition only.
         GenerateActionMethods(sb, component.Selectors, "this.root");
+
+        // Typed form helpers (no-op without discovered forms).
+        AppendFormMethods(sb, component, "this.root");
 
         sb.AppendLine("}");
 
@@ -350,6 +411,9 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("  protected getByTestId(testId: string): Locator {");
         sb.AppendLine("    return this.root.getByTestId(testId);");
         sb.AppendLine("  }");
+        sb.AppendLine();
+
+        AppendSharedControlHelpers(sb);
 
         sb.AppendLine("}");
 
@@ -357,7 +421,7 @@ public sealed class TemplateEngine : ITemplateEngine
     }
 
     /// <inheritdoc />
-    public string GenerateComponentObjectTestSpec(AngularComponentInfo component)
+    public string GenerateComponentObjectTestSpec(AngularComponentInfo component, TemplateContext? context = null)
     {
         ArgumentNullException.ThrowIfNull(component);
 
@@ -385,13 +449,24 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine(" */");
         }
 
-        // Host page URL is best-effort: the analyzer does not resolve a component's parent page,
-        // so this is emitted as a TODO placeholder for the author to fill in.
-        if (_options.GenerateJsDocComments)
+        // Host page URL: resolved from the route tree when a routable page embeds
+        // this component, otherwise a TODO placeholder for the author.
+        if (context?.HostPageUrls.TryGetValue(component.Name, out var hostUrl) == true)
         {
-            sb.AppendLine($"/** URL of the page that renders <{component.Selector}>. TODO: replace with the real host page URL. */");
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine($"/** URL of the page that renders <{component.Selector}> (derived from the route tree). */");
+            }
+            sb.AppendLine($"const HOST_PAGE_URL = '{hostUrl}';");
         }
-        sb.AppendLine("const HOST_PAGE_URL = '/';");
+        else
+        {
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine($"/** URL of the page that renders <{component.Selector}>. TODO: replace with the real host page URL. */");
+            }
+            sb.AppendLine("const HOST_PAGE_URL = '/';");
+        }
         sb.AppendLine();
 
         sb.AppendLine($"test.describe('{className}', () => {{");
@@ -406,8 +481,9 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("  });");
 
         // Scaffold one or two assertions from generated expect* helpers.
+        // Conditional elements are excluded — asserting them unconditionally would flake.
         var assertable = component.Selectors
-            .Where(ProducesVisibilityAssertion)
+            .Where(s => ProducesVisibilityAssertion(s) && !s.IsConditional)
             .Take(2)
             .ToList();
 
@@ -570,7 +646,7 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("  workers: process.env.CI ? 1 : undefined,");
         sb.AppendLine("  reporter: 'html',");
         sb.AppendLine("  use: {");
-        sb.AppendLine($"    baseURL: '{_options.BaseUrlPlaceholder}',");
+        sb.AppendLine($"    baseURL: '{GetEffectiveBaseUrl(project)}',");
         sb.AppendLine("    trace: 'on-first-retry',");
         sb.AppendLine($"    actionTimeout: {_options.DefaultTimeout},");
         sb.AppendLine("  },");
@@ -747,13 +823,33 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine($"test.describe('{component.Name}', () => {{");
         sb.AppendLine();
 
+        // Routable pages navigate before every test; non-routable specs assume the
+        // surrounding suite brings the component on screen.
+        if (component.IsRoutable)
+        {
+            var fixtureName = ToCamelCase(className);
+            sb.AppendLine($"  test.beforeEach(async ({{ {fixtureName} }}) => {{");
+            if (component.RouteParams.Count > 0)
+            {
+                var args = string.Join(", ", component.RouteParams.Select(p => $"{p}: 'test-{ToKebabCase(SelectorNaming.ToPascalCase(p))}'"));
+                sb.AppendLine($"    await {fixtureName}.navigate({{ {args} }}); // TODO: provide real route parameter values");
+            }
+            else
+            {
+                sb.AppendLine($"    await {fixtureName}.navigate();");
+            }
+            sb.AppendLine("  });");
+            sb.AppendLine();
+        }
+
         // Basic visibility test
         sb.AppendLine($"  test('should display the component', async ({{ {ToCamelCase(className)} }}) => {{");
         sb.AppendLine($"    await {ToCamelCase(className)}.waitForLoad();");
         sb.AppendLine("  });");
 
-        // Generate tests for each selector
-        foreach (var selector in component.Selectors)
+        // Generate tests for each selector. Conditional elements are skipped (their
+        // condition must be triggered first); repeated elements assert on .first().
+        foreach (var selector in component.Selectors.Where(s => !s.IsConditional))
         {
             sb.AppendLine();
 
@@ -762,14 +858,39 @@ public sealed class TemplateEngine : ITemplateEngine
                 sb.AppendLine($"  /** Tests that {selector.PropertyName} is visible */");
             }
 
+            var locatorExpression = selector.IsRepeated
+                ? $"{ToCamelCase(className)}.{ToCamelCase(selector.PropertyName)}.first()"
+                : $"{ToCamelCase(className)}.{ToCamelCase(selector.PropertyName)}";
             sb.AppendLine($"  test('{selector.PropertyName} should be visible', async ({{ {ToCamelCase(className)} }}) => {{");
-            sb.AppendLine($"    await expect({ToCamelCase(className)}.{ToCamelCase(selector.PropertyName)}).toBeVisible();");
+            sb.AppendLine($"    await expect({locatorExpression}).toBeVisible();");
             sb.AppendLine("  });");
         }
+
+        AppendConditionalSpecNote(sb, component);
 
         sb.AppendLine("});");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Lists conditional elements that the scaffold deliberately does not assert,
+    /// pointing at their expectVisible/expectHidden pairs.
+    /// </summary>
+    private static void AppendConditionalSpecNote(StringBuilder sb, AngularComponentInfo component)
+    {
+        var conditionals = component.Selectors.Where(s => s.IsConditional).ToList();
+        if (conditionals.Count == 0)
+        {
+            return;
+        }
+        sb.AppendLine();
+        sb.AppendLine("  // Conditional elements not asserted by default (trigger their condition first):");
+        foreach (var selector in conditionals)
+        {
+            var condition = selector.ConditionText is not null ? $" ({selector.ConditionText})" : "";
+            sb.AppendLine($"  //   {ToCamelCase(selector.PropertyName)}{condition} -> expect{selector.PropertyName}Visible() / expect{selector.PropertyName}Hidden()");
+        }
     }
 
     /// <inheritdoc />
@@ -848,39 +969,57 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine(" */");
         }
         sb.AppendLine("export const URLS = {");
-        sb.AppendLine($"  base: process.env.BASE_URL || '{_options.BaseUrlPlaceholder}',");
+        sb.AppendLine($"  base: process.env.BASE_URL || '{GetEffectiveBaseUrl(project)}',");
 
-        // Generate URL entries for routable components
+        // URL entries for routable components: strings for static routes,
+        // arrow functions for parameterized ones (from the analyzed route tree).
         var routableComponents = project.Components.Where(c => c.IsRoutable).ToList();
         foreach (var component in routableComponents)
         {
             var urlKey = ToCamelCase(GetPageObjectClassName(component.Name));
-            var routePath = !string.IsNullOrEmpty(component.RoutePath)
-                ? $"/{component.RoutePath}"
-                : $"/{ToKebabCase(component.Name)}";
-            sb.AppendLine($"  {urlKey}: '{routePath}',");
+            if (_options.GenerateJsDocComments)
+            {
+                var notes = new List<string>();
+                if (!string.IsNullOrEmpty(component.TitleFromRoute))
+                {
+                    notes.Add($"Route title: \"{component.TitleFromRoute}\"");
+                }
+                if (component.RoutePath is not null
+                    && project.Dist?.PrerenderedRoutes.Contains("/" + component.RoutePath) == true)
+                {
+                    notes.Add("Prerendered (confirmed in dist output)");
+                }
+                if (notes.Count > 0)
+                {
+                    sb.AppendLine($"  /** {string.Join(" — ", notes)} */");
+                }
+            }
+            sb.AppendLine(BuildUrlEntry(component, urlKey));
         }
 
         sb.AppendLine("} as const;");
-        sb.AppendLine();
 
-        if (_options.GenerateJsDocComments)
+        if (_options.EmitApiEndpointsExample)
         {
-            sb.AppendLine("/**");
-            sb.AppendLine(" * API endpoints for route mocking");
-            sb.AppendLine(" * Using glob patterns for flexible matching");
-            sb.AppendLine(" */");
+            sb.AppendLine();
+            if (_options.GenerateJsDocComments)
+            {
+                sb.AppendLine("/**");
+                sb.AppendLine(" * API endpoints for route mocking");
+                sb.AppendLine(" * Using glob patterns for flexible matching");
+                sb.AppendLine(" */");
+            }
+            sb.AppendLine("export const API_ENDPOINTS = {");
+            sb.AppendLine("  // Example REST endpoints — replace with the application's real API surface");
+            sb.AppendLine("  files: '**/api/files',");
+            sb.AppendLine("  fileById: (id: string) => `**/api/files/${id}`,");
+            sb.AppendLine("  fileContent: (id: string) => `**/api/files/${id}/content`,");
+            sb.AppendLine();
+            sb.AppendLine("  // SignalR endpoints");
+            sb.AppendLine("  telemetryHub: '**/telemetryhub',");
+            sb.AppendLine("  telemetryHubNegotiate: '**/telemetryhub/negotiate**',");
+            sb.AppendLine("} as const;");
         }
-        sb.AppendLine("export const API_ENDPOINTS = {");
-        sb.AppendLine("  // DFS (Distributed File System) endpoints");
-        sb.AppendLine("  files: '**/api/files',");
-        sb.AppendLine("  fileById: (id: string) => `**/api/files/${id}`,");
-        sb.AppendLine("  fileContent: (id: string) => `**/api/files/${id}/content`,");
-        sb.AppendLine();
-        sb.AppendLine("  // SignalR endpoints");
-        sb.AppendLine("  telemetryHub: '**/telemetryhub',");
-        sb.AppendLine("  telemetryHubNegotiate: '**/telemetryhub/negotiate**',");
-        sb.AppendLine("} as const;");
 
         return sb.ToString();
     }
@@ -909,7 +1048,7 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine();
         }
 
-        sb.AppendLine("import { Page, Locator } from '@playwright/test';");
+        sb.AppendLine("import { Page, Locator, expect } from '@playwright/test';");
         sb.AppendLine("import { TIMEOUTS } from '../configs/timeout.config';");
         sb.AppendLine();
 
@@ -917,15 +1056,17 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("  constructor(protected page: Page) {}");
         sb.AppendLine();
 
-        // Abstract navigate method
+        // Abstract navigate method. The optional unknown parameter lets pages with
+        // parameterized routes declare a typed override (method bivariance).
         if (_options.GenerateJsDocComments)
         {
             sb.AppendLine("  /**");
             sb.AppendLine("   * Navigate to the page.");
+            sb.AppendLine("   * @param params - Route parameters, when the page's route declares any.");
             sb.AppendLine("   * @returns Promise that resolves when navigation is complete.");
             sb.AppendLine("   */");
         }
-        sb.AppendLine("  abstract navigate(): Promise<void>;");
+        sb.AppendLine("  abstract navigate(params?: unknown): Promise<void>;");
         sb.AppendLine();
 
         // Abstract waitForLoad method
@@ -1070,6 +1211,9 @@ public sealed class TemplateEngine : ITemplateEngine
         sb.AppendLine("  protected async getCount(selector: string): Promise<number> {");
         sb.AppendLine("    return this.getLocator(selector).count();");
         sb.AppendLine("  }");
+        sb.AppendLine();
+
+        AppendSharedControlHelpers(sb);
 
         sb.AppendLine("}");
 
@@ -1806,12 +1950,20 @@ public sealed class TemplateEngine : ITemplateEngine
 
     private void GenerateActionMethods(StringBuilder sb, IReadOnlyList<ElementSelector> selectors, string rootExpression)
     {
-        var buttons = selectors.Where(s => s.ElementType is "button" or "mat-button").ToList();
-        var inputs = selectors.Where(s => s.ElementType is "input" or "textarea" or "mat-form-field").ToList();
-        var clickableElements = selectors.Where(s => s.HasClickHandler || s.IsLink).ToList();
-        var tables = selectors.Where(s => s.IsTable).ToList();
-        var textElements = selectors.Where(s => !string.IsNullOrEmpty(s.TextContent)).ToList();
-        var textContainerElements = selectors.Where(s => s.IsTextElement && string.IsNullOrEmpty(s.TextContent)).ToList();
+        // Partition: typed controls and repeated elements route to the v2 emitters
+        // (TemplateEngine.V2.cs); everything else keeps the v1 emission unchanged.
+        // Repeated elements must not get single-element actions (strict mode), and
+        // typed controls replace the generic click/fill with control-aware methods.
+        var typedControls = selectors.Where(s => s.ControlType != ControlType.None).ToList();
+        var repeatedPlain = selectors.Where(s => s.ControlType == ControlType.None && s.IsRepeated).ToList();
+        var v1Selectors = selectors.Where(s => s.ControlType == ControlType.None && !s.IsRepeated).ToList();
+
+        var buttons = v1Selectors.Where(s => s.ElementType is "button" or "mat-button").ToList();
+        var inputs = v1Selectors.Where(s => s.ElementType is "input" or "textarea" or "mat-form-field").ToList();
+        var clickableElements = v1Selectors.Where(s => s.HasClickHandler || s.IsLink).ToList();
+        var tables = v1Selectors.Where(s => s.IsTable).ToList();
+        var textElements = v1Selectors.Where(s => !string.IsNullOrEmpty(s.TextContent)).ToList();
+        var textContainerElements = v1Selectors.Where(s => s.IsTextElement && string.IsNullOrEmpty(s.TextContent)).ToList();
 
         // Generate click methods for buttons
         foreach (var button in buttons)
@@ -2035,6 +2187,9 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine($"    await this.get{table.PropertyName}Row(index).click();");
             sb.AppendLine("  }");
             sb.AppendLine();
+
+            // Typed column accessors when matColumnDef metadata is available.
+            AppendTypedTableAccessors(sb, table);
         }
 
         // Generate methods for text container elements with dynamic content
@@ -2090,28 +2245,70 @@ public sealed class TemplateEngine : ITemplateEngine
             sb.AppendLine("  }");
             sb.AppendLine();
         }
+
+        // --- v2 emission (no-ops for v1-shaped models) ---
+        AppendTypedInteractionMethods(sb, typedControls, rootExpression);
+        foreach (var repeated in repeatedPlain)
+        {
+            AppendRepeatedAccessors(sb, repeated);
+        }
+        AppendConditionalAssertions(sb, v1Selectors.Where(s => s.IsConditional));
     }
 
     /// <summary>
     /// Builds the locator initializer expression for a selector, rooted on the supplied base
     /// expression (<c>"page"</c> for page objects, <c>"this.root"</c> for component objects).
+    /// A <see cref="ElementSelector.ParentLandmark"/> (set by the analyzer only when an
+    /// otherwise-identical locator needs scoping) chains the landmark first.
     /// </summary>
     private static string GetLocatorMethod(ElementSelector selector, string baseExpression)
     {
+        if (selector.ParentLandmark is not null)
+        {
+            baseExpression = ChainLandmark(baseExpression, selector.ParentLandmark);
+        }
+
+        var roleName = selector.AriaLabel ?? selector.LabelText ?? selector.TextContent;
         return selector.Strategy switch
         {
-            SelectorStrategy.TestId => $"{baseExpression}.getByTestId('{EscapeForJsString(selector.SelectorValue.Replace("[data-testid='", "").Replace("']", ""))}')",
+            SelectorStrategy.TestId => $"{baseExpression}.getByTestId('{EscapeForJsString(selector.TestIdValue ?? selector.SelectorValue.Replace("[data-testid='", "").Replace("']", ""))}')",
             SelectorStrategy.Id => $"{baseExpression}.locator('{EscapeForJsString(selector.SelectorValue)}')",
+            // Role with an explicit ARIA role (AST engine) — any element kind.
+            SelectorStrategy.Role when selector.AriaRole is not null && !string.IsNullOrEmpty(roleName)
+                => $"{baseExpression}.getByRole('{selector.AriaRole}', {{ name: '{EscapeForJsString(roleName)}' }})",
+            SelectorStrategy.Role when selector.AriaRole is not null
+                => $"{baseExpression}.getByRole('{selector.AriaRole}')",
+            // Legacy role mapping (regex engine): buttons only.
             SelectorStrategy.Role when selector.ElementType == "button" && !string.IsNullOrEmpty(selector.TextContent)
                 => $"{baseExpression}.getByRole('button', {{ name: '{EscapeForJsString(selector.TextContent)}' }})",
             SelectorStrategy.Role when selector.ElementType == "button"
                 => $"{baseExpression}.locator('button')",
             SelectorStrategy.Text when !string.IsNullOrEmpty(selector.TextContent)
                 => $"{baseExpression}.getByText('{EscapeForJsString(selector.TextContent)}')",
-            SelectorStrategy.Placeholder => $"{baseExpression}.getByPlaceholder('{EscapeForJsString(selector.TextContent ?? "")}')",
-            SelectorStrategy.Label => $"{baseExpression}.getByLabel('{EscapeForJsString(selector.TextContent ?? "")}')",
+            SelectorStrategy.Placeholder => $"{baseExpression}.getByPlaceholder('{EscapeForJsString(selector.Placeholder ?? selector.TextContent ?? "")}')",
+            SelectorStrategy.Label => $"{baseExpression}.getByLabel('{EscapeForJsString(selector.LabelText ?? selector.TextContent ?? "")}')",
+            SelectorStrategy.FormControl => FormatLocatorWithQuotes(selector.SelectorValue, baseExpression),
             _ => FormatLocatorWithQuotes(selector.SelectorValue, baseExpression)
         };
+    }
+
+    /// <summary>
+    /// Scopes a base expression to a landmark ancestor: test id first, then
+    /// role (+ accessible name), then the CSS fallback.
+    /// </summary>
+    private static string ChainLandmark(string baseExpression, LandmarkRef landmark)
+    {
+        if (landmark.TestId is not null)
+        {
+            return $"{baseExpression}.getByTestId('{EscapeForJsString(landmark.TestId)}')";
+        }
+        if (landmark.Role is not null)
+        {
+            return landmark.AccessibleName is not null
+                ? $"{baseExpression}.getByRole('{landmark.Role}', {{ name: '{EscapeForJsString(landmark.AccessibleName)}' }})"
+                : $"{baseExpression}.getByRole('{landmark.Role}')";
+        }
+        return FormatLocatorWithQuotes(landmark.SelectorValue, baseExpression);
     }
 
     private static string FormatLocatorWithQuotes(string selectorValue, string baseExpression)
