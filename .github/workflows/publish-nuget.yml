@@ -40,9 +40,10 @@ jobs:
         working-directory: src/PlaywrightPomGenerator.Sidecar.Node
         run: npm ci
 
+      # Unquoted glob: bash expands it (Node 20 does not glob --test args itself).
       - name: Test sidecar (node:test)
         working-directory: src/PlaywrightPomGenerator.Sidecar.Node
-        run: node --test "test/*.test.js"
+        run: node --test test/*.test.js
 
       - name: Restore
         run: dotnet restore
