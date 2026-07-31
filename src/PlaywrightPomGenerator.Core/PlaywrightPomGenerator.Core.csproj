@@ -4,6 +4,25 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>PlaywrightPomGenerator.Core</PackageId>
+    <Version>2.0.0</Version>
+    <Title>Playwright POM Generator Core</Title>
+    <Authors>PlaywrightPomGenerator Contributors</Authors>
+    <Description>Reusable analysis and code-generation library for generating Playwright Page Object Model infrastructure from Angular applications, libraries, and workspaces.</Description>
+    <PackageTags>playwright;angular;testing;e2e;page-object-model;pom;code-generation;library</PackageTags>
+    <PackageProjectUrl>https://github.com/QuinntyneBrown/PageObjectModel</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/QuinntyneBrown/PageObjectModel</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) 2024 PlaywrightPomGenerator Contributors</Copyright>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +33,25 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="PlaywrightPomGenerator.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+
+    <!-- Library consumers need the same Node sidecar as the CLI for AST analysis.
+         The buildTransitive target places it under sidecar/ beside consuming applications. -->
+    <None Include="..\PlaywrightPomGenerator.Sidecar.Node\sidecar.js"
+          Pack="true"
+          PackagePath="contentFiles/any/any/sidecar/sidecar.js" />
+    <None Include="..\PlaywrightPomGenerator.Sidecar.Node\package.json"
+          Pack="true"
+          PackagePath="contentFiles/any/any/sidecar/package.json" />
+    <None Include="..\PlaywrightPomGenerator.Sidecar.Node\lib\**\*.js"
+          Pack="true"
+          PackagePath="contentFiles/any/any/sidecar/lib/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="buildTransitive\PlaywrightPomGenerator.Core.targets"
+          Pack="true"
+          PackagePath="buildTransitive/PlaywrightPomGenerator.Core.targets" />
   </ItemGroup>
 
 </Project>

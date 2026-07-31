@@ -716,7 +716,7 @@ We follow [Semantic Versioning](https://semver.org/):
 
 ### Release Checklist
 
-1. Update version in project files
+1. Update the shared product version in both Core and CLI project files
 2. Update CHANGELOG.md
 3. Update documentation
 4. Run full test suite
