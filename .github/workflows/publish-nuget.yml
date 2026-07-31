@@ -72,9 +72,10 @@ jobs:
         run: |
           set -euo pipefail
           CORE_VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/PlaywrightPomGenerator.Core/PlaywrightPomGenerator.Core.csproj)
+          SMOKE_PACKAGES="${{ runner.temp }}/smoke-nupkg"
           INTERMEDIARY="${{ runner.temp }}/core-intermediary"
           CONSUMER="${{ runner.temp }}/core-consumer"
-          mkdir -p "$INTERMEDIARY" "$CONSUMER"
+          mkdir -p "$SMOKE_PACKAGES" "$INTERMEDIARY" "$CONSUMER"
 
           cat > "$INTERMEDIARY/CoreIntermediary.csproj" <<EOF
           <Project Sdk="Microsoft.NET.Sdk">
@@ -90,7 +91,7 @@ jobs:
           </Project>
           EOF
 
-          dotnet pack "$INTERMEDIARY/CoreIntermediary.csproj" --configuration Release --output "${{ runner.temp }}/nupkg"
+          dotnet pack "$INTERMEDIARY/CoreIntermediary.csproj" --configuration Release --output "$SMOKE_PACKAGES"
 
           cat > "$CONSUMER/CoreSmoke.csproj" <<EOF
           <Project Sdk="Microsoft.NET.Sdk">
@@ -99,7 +100,7 @@ jobs:
               <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
               <ImplicitUsings>enable</ImplicitUsings>
               <Nullable>enable</Nullable>
-              <RestoreSources>${{ runner.temp }}/nupkg;https://api.nuget.org/v3/index.json</RestoreSources>
+              <RestoreSources>$SMOKE_PACKAGES;${{ runner.temp }}/nupkg;https://api.nuget.org/v3/index.json</RestoreSources>
             </PropertyGroup>
             <ItemGroup>
               <PackageReference Include="PpgCoreSmoke.Intermediary" Version="1.0.0" />
@@ -205,3 +206,15 @@ jobs:
           --api-key "$NUGET_API_KEY"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
+
+      # One-time remediation for the smoke package published before smoke and release outputs
+      # were separated. Remove this step after the package has been unlisted successfully.
+      - name: Unlist accidentally published smoke package
+        if: github.event_name == 'push'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: >-
+          dotnet nuget delete PpgCoreSmoke.Intermediary 1.0.0
+          --api-key "$NUGET_API_KEY"
+          --source https://api.nuget.org/v3/index.json
+          --non-interactive
