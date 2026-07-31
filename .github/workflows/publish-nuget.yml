@@ -196,7 +196,6 @@ jobs:
           --api-key "$NUGET_API_KEY"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
-
       - name: Push symbols to NuGet
         if: github.event_name == 'push'
         env:
@@ -207,14 +206,3 @@ jobs:
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
-      # One-time remediation for the smoke package published before smoke and release outputs
-      # were separated. Remove this step after the package has been unlisted successfully.
-      - name: Unlist accidentally published smoke package
-        if: github.event_name == 'push'
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: >-
-          dotnet nuget delete PpgCoreSmoke.Intermediary 1.0.0
-          --api-key "$NUGET_API_KEY"
-          --source https://api.nuget.org/v3/index.json
-          --non-interactive
