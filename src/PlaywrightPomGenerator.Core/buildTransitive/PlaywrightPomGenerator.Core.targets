@@ -1,0 +1,13 @@
+<Project>
+  <!-- contentFiles are not copied when this package is a transitive dependency. Import the
+       sidecar explicitly so libraries can expose Core without requiring applications to add a
+       second, direct PackageReference. -->
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)..\contentFiles\any\any\sidecar\**\*">
+      <Link>sidecar\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Visible>false</Visible>
+    </Content>
+  </ItemGroup>
+</Project>

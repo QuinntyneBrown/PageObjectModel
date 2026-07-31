@@ -17,7 +17,8 @@ Node needed). `--engine auto` (default) prefers AST and falls back to regex with
 ```powershell
 dotnet build -c Release
 dotnet test                                   # full suite (see SAC caveat below)
-dotnet pack src/PlaywrightPomGenerator.Cli -c Release   # produces the ppg nupkg in ./nupkg
+dotnet pack src/PlaywrightPomGenerator.Core -c Release  # reusable library package
+dotnet pack src/PlaywrightPomGenerator.Cli -c Release   # ppg global-tool package
 
 # Run the CLI from source
 dotnet run --project src/PlaywrightPomGenerator.Cli -- app ./some-angular-app -o ./e2e
@@ -165,6 +166,6 @@ analysis). See README.md for full per-command usage and generated-output example
   the emitted output. Pinned invariants: page objects root every locator on `page`; component
   objects root everything on `this.root`; `base.component.ts` must not contain `navigate`,
   `goto`, `import { Page`, or `: Page`.
-- Bump `<Version>` in `PlaywrightPomGenerator.Cli.csproj` to publish — the
-  `.github/workflows/publish-nuget.yml` pushes to NuGet on every push to `main` with
-  `--skip-duplicate`, so an unchanged version is a no-op.
+- Core and CLI use the same product version. Bump `<Version>` in both project files for a release.
+  `.github/workflows/publish-nuget.yml` validates both packed packages on pull requests and pushes
+  them to NuGet from `main` with `--skip-duplicate`, so unchanged versions are no-ops.

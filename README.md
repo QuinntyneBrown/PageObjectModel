@@ -42,6 +42,18 @@ dotnet tool update -g PlaywrightPomGenerator
 
 The tool command is `ppg`.
 
+### Library Package
+
+Applications and libraries that need the analyzers, models, and generation services directly can
+reference the reusable Core package:
+
+```bash
+dotnet add package PlaywrightPomGenerator.Core --version 2.0.0
+```
+
+See the [Core package documentation](src/PlaywrightPomGenerator.Core/README.md) for API usage and
+AST sidecar requirements.
+
 ## Quick Start
 
 ### 1. Generate Tests for Your Angular App
@@ -802,7 +814,8 @@ dotnet build -c Release
 # Run tests
 dotnet test
 
-# Create NuGet package
+# Create NuGet packages
+dotnet pack src/PlaywrightPomGenerator.Core -c Release
 dotnet pack src/PlaywrightPomGenerator.Cli -c Release
 ```
 

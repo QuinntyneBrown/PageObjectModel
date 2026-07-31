@@ -1,10 +1,11 @@
 name: Publish to NuGet
 
-# Builds, tests, packs, and publishes the PlaywrightPomGenerator tool to NuGet on every
-# push to main. Commits that do not bump <Version> are a no-op at the push step thanks to
-# --skip-duplicate, so this is safe to run on every commit.
+# Pull requests build, test, pack, and smoke-test both NuGet packages. Pushes to main run the
+# same validation and then publish. Versions that already exist are skipped safely.
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
 
@@ -28,7 +29,9 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            9.0.x
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -55,7 +58,94 @@ jobs:
         run: dotnet test --configuration Release --no-build --verbosity normal
 
       - name: Pack
-        run: dotnet pack src/PlaywrightPomGenerator.Cli/PlaywrightPomGenerator.Cli.csproj --configuration Release --no-build --output ${{ runner.temp }}/nupkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet pack src/PlaywrightPomGenerator.Core/PlaywrightPomGenerator.Core.csproj --configuration Release --no-build --output "${{ runner.temp }}/nupkg"
+          dotnet pack src/PlaywrightPomGenerator.Cli/PlaywrightPomGenerator.Cli.csproj --configuration Release --no-build --output "${{ runner.temp }}/nupkg"
+
+      # Put Core behind an intermediary NuGet library, then restore real net8.0 and net9.0
+      # applications. This verifies compile assets, dependencies, buildTransitive sidecar copy,
+      # and the CodeGenerator-style transitive consumption path.
+      - name: Smoke test packed Core library
+        shell: bash
+        run: |
+          set -euo pipefail
+          CORE_VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/PlaywrightPomGenerator.Core/PlaywrightPomGenerator.Core.csproj)
+          INTERMEDIARY="${{ runner.temp }}/core-intermediary"
+          CONSUMER="${{ runner.temp }}/core-consumer"
+          mkdir -p "$INTERMEDIARY" "$CONSUMER"
+
+          cat > "$INTERMEDIARY/CoreIntermediary.csproj" <<EOF
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+              <PackageId>PpgCoreSmoke.Intermediary</PackageId>
+              <Version>1.0.0</Version>
+              <RestoreSources>${{ runner.temp }}/nupkg;https://api.nuget.org/v3/index.json</RestoreSources>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="PlaywrightPomGenerator.Core" Version="$CORE_VERSION" />
+            </ItemGroup>
+          </Project>
+          EOF
+
+          dotnet pack "$INTERMEDIARY/CoreIntermediary.csproj" --configuration Release --output "${{ runner.temp }}/nupkg"
+
+          cat > "$CONSUMER/CoreSmoke.csproj" <<EOF
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <Nullable>enable</Nullable>
+              <RestoreSources>${{ runner.temp }}/nupkg;https://api.nuget.org/v3/index.json</RestoreSources>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="PpgCoreSmoke.Intermediary" Version="1.0.0" />
+            </ItemGroup>
+          </Project>
+          EOF
+
+          cat > "$CONSUMER/Program.cs" <<'EOF'
+          using Microsoft.Extensions.Logging.Abstractions;
+          using Microsoft.Extensions.Options;
+          using PlaywrightPomGenerator.Core.Models;
+          using PlaywrightPomGenerator.Core.Services;
+
+          var templates = new TemplateEngine(Options.Create(new GeneratorOptions { ToolVersion = "2.0.0" }));
+          if (!templates.GenerateBasePage().Contains("BasePage", StringComparison.Ordinal))
+          {
+              throw new InvalidOperationException("The public template API did not produce BasePage output.");
+          }
+
+          var sidecarPath = SidecarLocator.Locate();
+          if (!File.Exists(sidecarPath))
+          {
+              throw new FileNotFoundException("The packaged sidecar was not copied to the consumer output.", sidecarPath);
+          }
+
+          var sourceRoot = Environment.GetEnvironmentVariable("PPG_SIDECAR_SOURCE_ROOT")
+              ?? throw new InvalidOperationException("PPG_SIDECAR_SOURCE_ROOT is required.");
+          var transport = new NodeSidecarTransport(
+              "node",
+              sidecarPath,
+              NullLogger<NodeSidecarTransport>.Instance,
+              TimeSpan.FromSeconds(30));
+          var response = await transport.InvokeAsync("ping", new { root = sourceRoot });
+          if (response.GetString() != "pong")
+          {
+              throw new InvalidOperationException("The packaged sidecar did not respond to ping.");
+          }
+
+          Console.WriteLine($"Core package smoke test passed; sidecar: {sidecarPath}");
+          EOF
+
+          dotnet restore "$CONSUMER/CoreSmoke.csproj"
+          dotnet build "$CONSUMER/CoreSmoke.csproj" --configuration Release --no-restore
+          export PPG_SIDECAR_SOURCE_ROOT="$GITHUB_WORKSPACE/src/PlaywrightPomGenerator.Sidecar.Node"
+          dotnet run --project "$CONSUMER/CoreSmoke.csproj" --configuration Release --framework net8.0 --no-build
+          dotnet run --project "$CONSUMER/CoreSmoke.csproj" --configuration Release --framework net9.0 --no-build
 
       # Smoke test the PACKED tool: the only pre-publish exercise of the real nupkg
       # sidecar layout (tools/net8.0/any/sidecar/). Asserts the AST engine works from
@@ -97,6 +187,7 @@ jobs:
       # Pushing the .nupkg auto-publishes the adjacent .snupkg symbols; the explicit symbols
       # push below is a belt-and-suspenders no-op (--skip-duplicate) in case it does not.
       - name: Push package to NuGet
+        if: github.event_name == 'push'
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: >-
@@ -106,6 +197,7 @@ jobs:
           --skip-duplicate
 
       - name: Push symbols to NuGet
+        if: github.event_name == 'push'
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: >-
