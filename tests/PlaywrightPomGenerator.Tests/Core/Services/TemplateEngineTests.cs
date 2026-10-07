@@ -683,6 +683,76 @@ public sealed class TemplateEngineTests
         };
     }
 
+    [Fact]
+    public void GeneratePageObject_WithWeakLocatorAndJsDoc_ShouldDocumentTheFix()
+    {
+        // Arrange
+        _options.GenerateJsDocComments = true;
+        var component = CreateTestComponent() with
+        {
+            Selectors =
+            [
+                new ElementSelector
+                {
+                    ElementType = "div",
+                    Strategy = SelectorStrategy.Css,
+                    SelectorValue = "div.summary",
+                    PropertyName = "OrderSummary"
+                }
+            ]
+        };
+
+        // Act
+        var result = _engine.GeneratePageObject(component);
+
+        // Assert
+        result.Should().Contain("* Weak locator (CSS fallback) — add data-testid=\"order-summary\" to <div>.");
+    }
+
+    [Fact]
+    public void GeneratePageObject_WithStableLocators_ShouldNotMentionWeakLocators()
+    {
+        _options.GenerateJsDocComments = true;
+
+        var result = _engine.GeneratePageObject(CreateTestComponent());
+
+        result.Should().NotContain("Weak locator");
+    }
+
+    [Fact]
+    public void GeneratePageObject_WithWeakLocatorAndJsDocDisabled_ShouldNotMentionWeakLocators()
+    {
+        _options.GenerateJsDocComments = false;
+        var component = CreateTestComponent() with
+        {
+            Selectors =
+            [
+                new ElementSelector { ElementType = "div", Strategy = SelectorStrategy.Css, SelectorValue = "div", PropertyName = "Container" }
+            ]
+        };
+
+        var result = _engine.GeneratePageObject(component);
+
+        result.Should().NotContain("Weak locator");
+    }
+
+    [Fact]
+    public void GenerateComponentObject_WithWeakLocatorAndJsDoc_ShouldDocumentTheFix()
+    {
+        _options.GenerateJsDocComments = true;
+        var component = CreateTestComponent() with
+        {
+            Selectors =
+            [
+                new ElementSelector { ElementType = "span", Strategy = SelectorStrategy.Css, SelectorValue = "span", PropertyName = "TextSpan2" }
+            ]
+        };
+
+        var result = _engine.GenerateComponentObject(component);
+
+        result.Should().Contain("* Weak locator (generic name)");
+    }
+
     private static AngularComponentInfo CreateTestComponent()
     {
         return new AngularComponentInfo

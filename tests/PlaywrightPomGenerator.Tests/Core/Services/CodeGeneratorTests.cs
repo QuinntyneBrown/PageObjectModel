@@ -548,6 +548,116 @@ public sealed class CodeGeneratorTests
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
+    [Fact]
+    public async Task GenerateForApplicationAsync_ShouldSurfaceAnalysisWarnings()
+    {
+        // Arrange — the analyzer recorded a per-component regex fallback.
+        var project = CreateTestProject() with
+        {
+            Analysis = new AnalysisReport
+            {
+                EngineRequested = AnalysisEngine.Auto,
+                EngineUsed = AnalysisEngineUsed.Ast,
+                Warnings = ["LegacyComponent: template analyzed via regex fallback (parse failed)"]
+            }
+        };
+
+        // Act
+        var result = await _generator.GenerateForApplicationAsync(project, "/output");
+
+        // Assert — it reaches the result the CLI prints.
+        result.Success.Should().BeTrue();
+        result.Warnings.Should().Contain(w => w.Contains("LegacyComponent") && w.Contains("regex fallback"));
+    }
+
+    [Fact]
+    public async Task GenerateComponentObjectsAsync_ShouldSurfaceAnalysisWarnings()
+    {
+        // Arrange
+        var project = CreateTestProject() with
+        {
+            Analysis = new AnalysisReport
+            {
+                EngineRequested = AnalysisEngine.Auto,
+                EngineUsed = AnalysisEngineUsed.Ast,
+                Warnings = ["sidecar: could not resolve lazy import './admin.routes'"]
+            }
+        };
+
+        // Act
+        var result = await _generator.GenerateComponentObjectsAsync(project, "/output");
+
+        // Assert
+        result.Warnings.Should().Contain(w => w.Contains("lazy import"));
+    }
+
+    [Fact]
+    public async Task GenerateForApplicationAsync_WithWeakLocators_ShouldWarnWithFix()
+    {
+        // Arrange — a bare-div CSS fallback next to a stable testid locator.
+        var project = CreateTestProject();
+        project = project with
+        {
+            Components =
+            [
+                project.Components[0] with
+                {
+                    Selectors =
+                    [
+                        project.Components[0].Selectors[0],
+                        new ElementSelector
+                        {
+                            ElementType = "div",
+                            Strategy = SelectorStrategy.Css,
+                            SelectorValue = "div",
+                            PropertyName = "Container"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        // Act
+        var result = await _generator.GenerateForApplicationAsync(project, "/output");
+
+        // Assert
+        result.Warnings.Should().Contain(w =>
+            w.StartsWith("LoginComponent: 1 of 2 locators are weak") && w.Contains("data-testid"));
+    }
+
+    [Fact]
+    public async Task GenerateForApplicationAsync_WithLocatorQualityWarningsOff_ShouldStaySilent()
+    {
+        // Arrange
+        _options.LocatorQualityWarnings = false;
+        var project = CreateTestProject();
+        project = project with
+        {
+            Components =
+            [
+                project.Components[0] with
+                {
+                    Selectors =
+                    [
+                        new ElementSelector
+                        {
+                            ElementType = "div",
+                            Strategy = SelectorStrategy.Css,
+                            SelectorValue = "div",
+                            PropertyName = "Container"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        // Act
+        var result = await _generator.GenerateForApplicationAsync(project, "/output");
+
+        // Assert
+        result.Warnings.Should().NotContain(w => w.Contains("locators are weak"));
+    }
+
     private static AngularProjectInfo CreateTestProject()
     {
         return new AngularProjectInfo

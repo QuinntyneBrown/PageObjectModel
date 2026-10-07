@@ -7,7 +7,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>PlaywrightPomGenerator.Core</PackageId>
-    <Version>2.0.0</Version>
+    <Version>2.1.0</Version>
     <Title>Playwright POM Generator Core</Title>
     <Authors>PlaywrightPomGenerator Contributors</Authors>
     <Description>Reusable analysis and code-generation library for generating Playwright Page Object Model infrastructure from Angular applications, libraries, and workspaces.</Description>

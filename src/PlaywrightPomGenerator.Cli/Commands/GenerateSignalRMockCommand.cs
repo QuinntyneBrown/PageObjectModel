@@ -97,7 +97,7 @@ public sealed class GenerateSignalRMockCommandHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate SignalR mock fixture");
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            ResultPrinter.PrintError(ex, supportsRegexFallback: false);
             return 1;
         }
     }

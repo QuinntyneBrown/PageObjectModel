@@ -142,7 +142,7 @@ public sealed class GenerateComponentCommandHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate component objects for path {Path}", path);
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            ResultPrinter.PrintError(ex, supportsRegexFallback: true);
             return 1;
         }
     }

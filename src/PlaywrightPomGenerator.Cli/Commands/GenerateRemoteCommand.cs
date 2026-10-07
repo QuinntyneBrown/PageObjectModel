@@ -179,7 +179,7 @@ public sealed class GenerateRemoteCommandHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate files from remote URL {Url}", url);
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            ResultPrinter.PrintError(ex, supportsRegexFallback: true);
             return 1;
         }
         finally
@@ -247,7 +247,7 @@ public sealed class GenerateRemoteCommandHandler
                 var workspace = await _analyzer.AnalyzeWorkspaceAsync(angularRoot, cancellationToken)
                     .ConfigureAwait(false);
 
-                ResultPrinter.PrintAnalysisEngine(workspace.Projects.FirstOrDefault()?.Analysis);
+                ResultPrinter.PrintAnalysisEngines(workspace.Projects);
 
                 // Try to find the project that contains the target path
                 var matchingProject = workspace.Projects

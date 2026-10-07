@@ -272,6 +272,128 @@ public sealed class AngularAnalyzerEngineTests
         component.Selectors.Should().ContainSingle(s =>
             s.Strategy == SelectorStrategy.TestId && s.SelectorValue == "[data-testid='legacy-action']");
         project.Analysis!.Warnings.Should().Contain(w => w.Contains("LegacyComponent") && w.Contains("regex fallback"));
+        project.Analysis.Warnings.Should().Contain(w => w.Contains("parse failed") && w.Contains("fix the template error"));
+    }
+
+    [Fact]
+    public async Task AnalyzeApplicationAsync_AutoWithTypeScriptMissing_ShouldExplainTheFix()
+    {
+        // Arrange
+        AddRegexDiscoverableApp();
+        _astAnalyzer.AnalyzeProjectAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlyList<AstProjectTarget>>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns<Task<AstProjectAnalysis>>(_ => throw new SidecarUnavailableException(
+                SidecarUnavailableReason.TypeScriptMissing, "no typescript"));
+
+        // Act
+        var project = await CreateAnalyzer(AnalysisEngine.Auto).AnalyzeApplicationAsync("/app");
+
+        // Assert — the banner reason carries the same remediation as the exception.
+        project.Analysis!.FallbackReason.Should().Contain("typescript").And.Contain("npm install");
+    }
+
+    [Fact]
+    public void TemplateFallbackWarning_WithoutCompilerAndWithoutErrors_ShouldPointAtNpmInstall()
+    {
+        var ast = new AstComponent
+        {
+            ClassName = "LegacyComponent",
+            FilePath = "/app/src/legacy.component.ts",
+            TemplateSource = "external",
+            TemplateParsed = false
+        };
+
+        AngularAnalyzer.TemplateFallbackWarning(ast, compilerAvailable: false)
+            .Should().Contain("@angular/compiler").And.Contain("npm install");
+        AngularAnalyzer.TemplateFallbackWarning(ast, compilerAvailable: true)
+            .Should().Be("LegacyComponent: template analyzed via regex fallback");
+    }
+
+    [Fact]
+    public async Task AnalyzeApplicationAsync_CustomWrapperControl_ShouldResolveThroughTheChildTemplate()
+    {
+        // Arrange — <ds-dropdown formControlName="country"> whose own template is one <mat-select>.
+        _fileSystem.AddDirectory("/app/src");
+        var analysis = new AstProjectAnalysis
+        {
+            SchemaVersion = 1,
+            Engine = new AstEngineInfo { TypeScript = "5.4.5", AngularCompiler = "17.3.0" },
+            Projects =
+            [
+                new AstProjectResult
+                {
+                    Name = "app",
+                    Components =
+                    [
+                        new AstComponent
+                        {
+                            ClassName = "CheckoutComponent",
+                            FilePath = "/app/src/checkout.component.ts",
+                            Selector = "app-checkout",
+                            TemplateSource = "inline",
+                            TemplateParsed = true,
+                            Template = new AstTemplate
+                            {
+                                Elements =
+                                [
+                                    new AstElement
+                                    {
+                                        Tag = "ds-dropdown",
+                                        Form = new AstFormFacts { FormControlName = "country" }
+                                    }
+                                ],
+                                Forms =
+                                [
+                                    new AstForm
+                                    {
+                                        FormGroup = "form",
+                                        Controls = [new AstFormControl { Name = "country", Tag = "ds-dropdown" }]
+                                    }
+                                ]
+                            },
+                            ChildComponents =
+                            [
+                                new AstChildComponent
+                                {
+                                    Selector = "ds-dropdown",
+                                    ComponentClassName = "DsDropdownComponent",
+                                    ComponentFilePath = "/app/src/ds-dropdown.component.ts",
+                                    Count = 1
+                                }
+                            ]
+                        },
+                        new AstComponent
+                        {
+                            ClassName = "DsDropdownComponent",
+                            FilePath = "/app/src/ds-dropdown.component.ts",
+                            Selector = "ds-dropdown",
+                            TemplateSource = "inline",
+                            TemplateParsed = true,
+                            Template = new AstTemplate
+                            {
+                                Elements = [new AstElement { Tag = "mat-select", Widget = "matSelect" }]
+                            }
+                        }
+                    ]
+                }
+            ]
+        };
+        _astAnalyzer.AnalyzeProjectAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlyList<AstProjectTarget>>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(analysis);
+
+        // Act
+        var project = await CreateAnalyzer(AnalysisEngine.Auto).AnalyzeApplicationAsync("/app");
+
+        // Assert — the host element is typed, and the form control is a Select, not a TextInput.
+        var checkout = project.Components.Single(c => c.Name == "CheckoutComponent");
+        var country = checkout.Selectors.Should().ContainSingle(s => s.FormControlName == "country").Subject;
+        country.ControlType.Should().Be(ControlType.Select);
+        country.MaterialWidget.Should().Be(MaterialWidget.MatSelect);
+        country.InnerControlSelector.Should().Be("mat-select");
+        country.ResolvedThroughComponent.Should().Be("DsDropdownComponent");
+        checkout.Forms.Should().ContainSingle().Which.Controls.Should().ContainSingle()
+            .Which.ControlType.Should().Be(ControlType.Select);
     }
 
     [Fact]

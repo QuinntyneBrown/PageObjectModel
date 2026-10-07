@@ -23,6 +23,11 @@ public sealed class SidecarUnavailableException : InvalidOperationException
     /// Gets the failure category.
     /// </summary>
     public SidecarUnavailableReason Reason { get; }
+
+    /// <summary>
+    /// Gets the one-line suggested fix for <see cref="Reason"/>.
+    /// </summary>
+    public string Remediation => SidecarRemediation.For(Reason);
 }
 
 /// <summary>
@@ -40,5 +45,8 @@ public enum SidecarUnavailableReason
     TypeScriptMissing,
 
     /// <summary>The sidecar produced no usable response.</summary>
-    ProtocolError
+    ProtocolError,
+
+    /// <summary>The sidecar did not answer within the configured timeout.</summary>
+    Timeout
 }

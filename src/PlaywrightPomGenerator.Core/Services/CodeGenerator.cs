@@ -71,6 +71,8 @@ public sealed class CodeGenerator : ICodeGenerator
             _fileSystem.CreateDirectory(configsDir);
             _fileSystem.CreateDirectory(fixturesDir);
 
+            AppendAnalysisWarnings(project, warnings);
+
             // Deduplicate components by name (keep first occurrence, merge selectors from duplicates)
             var deduplicatedComponents = DeduplicateComponents(project.Components);
             var deduplicatedProject = project with { Components = deduplicatedComponents };
@@ -90,6 +92,7 @@ public sealed class CodeGenerator : ICodeGenerator
                 ? ComputeComponentObjectTargets(deduplicatedComponents)
                 : [];
             var context = BuildTemplateContext(deduplicatedProject, componentObjectTargets, warnings);
+            AppendLocatorQualityWarnings(deduplicatedComponents, warnings);
 
             // Generate playwright config
             var configFile = await GenerateConfigFileAsync(deduplicatedProject, fullOutputPath, cancellationToken)
@@ -303,6 +306,7 @@ public sealed class CodeGenerator : ICodeGenerator
 
         var generatedFiles = new List<GeneratedFile>();
         var warnings = new List<string>();
+        AppendAnalysisWarnings(project, warnings);
 
         _fileSystem.CreateDirectory(outputPath);
 
@@ -334,6 +338,10 @@ public sealed class CodeGenerator : ICodeGenerator
             var context = request.GeneratePageObjects && request.GenerateComponentObjects
                 ? BuildTemplateContext(project, project.Components, warnings)
                 : BuildTemplateContext(project, [], request.GeneratePageObjects ? warnings : null);
+            if (request.GeneratePageObjects || request.GenerateComponentObjects)
+            {
+                AppendLocatorQualityWarnings(project.Components, warnings);
+            }
 
             if (request.GeneratePageObjects || request.GenerateSelectors)
             {
@@ -481,6 +489,8 @@ public sealed class CodeGenerator : ICodeGenerator
             _fileSystem.CreateDirectory(componentObjectsDir);
             _fileSystem.CreateDirectory(testsDir);
 
+            AppendAnalysisWarnings(project, warnings);
+
             // Deduplicate components by name (keep first occurrence, merge selectors from duplicates)
             var deduplicatedComponents = DeduplicateComponents(project.Components);
 
@@ -504,6 +514,7 @@ public sealed class CodeGenerator : ICodeGenerator
             // URLs come from the route tree when available.
             var context = BuildTemplateContext(
                 project with { Components = deduplicatedComponents }, targets, warnings);
+            AppendLocatorQualityWarnings(targets, warnings);
 
             // Generate the base component class once.
             var baseComponentFile = await GenerateBaseComponentFileAsync(componentObjectsDir, cancellationToken)
@@ -963,6 +974,30 @@ public sealed class CodeGenerator : ICodeGenerator
         return components
             .Where(c => referencedNames.Contains(c.Name) || !c.IsRoutable)
             .ToList();
+    }
+
+    /// <summary>
+    /// Adds the per-component weak-locator summaries (see <see cref="LocatorQuality"/>)
+    /// when the option is on.
+    /// </summary>
+    private void AppendLocatorQualityWarnings(IEnumerable<AngularComponentInfo> components, List<string> warnings)
+    {
+        if (_options.LocatorQualityWarnings)
+        {
+            LocatorQuality.AppendWarnings(components, warnings, _options.DebugMode);
+        }
+    }
+
+    /// <summary>
+    /// Carries the analyzer's per-project warnings (regex fallbacks, sidecar notes)
+    /// into the generation result so the CLI's Warnings block shows them.
+    /// </summary>
+    private static void AppendAnalysisWarnings(AngularProjectInfo project, List<string> warnings)
+    {
+        if (project.Analysis is { Warnings.Count: > 0 } report)
+        {
+            warnings.AddRange(report.Warnings);
+        }
     }
 
     /// <summary>

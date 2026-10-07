@@ -291,8 +291,10 @@ the sidecar entirely. Every run prints which engine produced the analysis:
 
 ```
 Analysis engine: AST (typescript 5.7.3, @angular/compiler 19.2.25)
-Analysis engine: regex (Node.js not found — install Node.js 18+ or set POMGEN_NODE to enable AST analysis)
+Analysis engine: regex (Node.js not found — Install Node.js 18+ or point POMGEN_NODE at the node executable.)
 ```
+
+Workspace runs print one banner per project (`[shop] Analysis engine: …`).
 
 ### Node requirement matrix
 
@@ -305,6 +307,50 @@ Analysis engine: regex (Node.js not found — install Node.js 18+ or set POMGEN_
 Node.js 18+ is recommended. The sidecar resolves `typescript` and
 `@angular/compiler` from the **analyzed app's** `node_modules` — run `npm install`
 in the app to get full-fidelity analysis.
+
+### Custom control wrappers (look-through)
+
+Design-system wrappers are resolved through their own template. When `<ds-dropdown>` is a
+workspace component whose template contains exactly one value control (a `<mat-select>`,
+`<input>`, `<mat-checkbox>`, …), the host element gets that control's typed interaction
+(`selectCountry(...)`, `fillEmail(...)`, `checkTerms()`), and reactive-form fills pick the
+right action instead of calling `fill()` on the host. The generated property still points at
+the host element; only the action descends:
+
+```typescript
+/**
+ * Locator for the CountrySelect element.
+ * Element type: ds-dropdown
+ * Strategy: FormControl
+ * Control resolved through DsDropdownComponent (mat-select); typed actions target the inner control.
+ */
+readonly countrySelect: Locator;
+
+async selectCountrySelect(optionText: string): Promise<void> {
+  await this.selectMatOption(this.countrySelect.locator('mat-select'), optionText);
+}
+```
+
+Resolution is conservative: wrappers with zero or several controls, repeated or projected
+controls, or unparsed templates are left as plain locators. Nested wrappers resolve up to
+three levels deep. Requires the AST engine.
+
+## Troubleshooting
+
+Every failure the analysis can hit prints a cause and a fix. With `--engine auto` (the
+default) the fix appears in the engine banner and generation continues with regex; with
+`--engine ast` (and always for `bridge`) the run stops with `Error:` / `Fix:` lines.
+
+| Message | Cause | Fix |
+|---|---|---|
+| `Node.js not found` | `node` is not on PATH | Install Node.js 18+ or set `POMGEN_NODE` to the executable |
+| `typescript not resolvable from the analyzed project's node_modules` | The app has no `node_modules` | Run `npm install` in the analyzed workspace |
+| `sidecar not found` | The tool's `sidecar/` folder is missing or moved | Set `POMGEN_SIDECAR` to `sidecar.js`, or `dotnet tool update -g PlaywrightPomGenerator.Cli` |
+| `sidecar timed out` | Very large workspace or slow disk | Raise `Generator:SidecarTimeoutSeconds` (`POMGEN_Generator__SidecarTimeoutSeconds`; `0` disables) or analyze a sub-path |
+| `sidecar protocol error` | Node crashed or printed nothing | Re-run with `--debug`; check `node --version` is 18+ and the workspace's `node_modules` is complete |
+| `{Component}: template analyzed via regex fallback (…) — fix the template error` | The Angular compiler rejected that template | Fix the reported template error; only that component degrades |
+| `… — @angular/compiler not found in node_modules` | The app's `node_modules` lacks `@angular/compiler` | Run `npm install` in the workspace |
+| `{Component}: N of M locators are weak — …` | Locators fell back to CSS, dynamic text, or generic numbered names | Add `data-testid` / `aria-label` to the listed elements (details per locator with `--debug`); disable with `Generator:LocatorQualityWarnings=false` |
 
 ### Dist output analysis (`--dist`)
 
@@ -717,6 +763,10 @@ Use the `POMGEN_` prefix:
 export POMGEN_Generator__TestFileSuffix="test"
 export POMGEN_Generator__DefaultTimeout="60000"
 export POMGEN_Generator__BaseUrlPlaceholder="http://localhost:3000"
+export POMGEN_Generator__SidecarTimeoutSeconds="900"      # 0 disables the sidecar timeout
+export POMGEN_Generator__LocatorQualityWarnings="false"   # silence weak-locator warnings
+export POMGEN_NODE="/usr/local/bin/node"                  # node executable for the AST sidecar
+export POMGEN_SIDECAR="/opt/ppg/sidecar/sidecar.js"       # explicit sidecar location
 ```
 
 ## Selector Detection

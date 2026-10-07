@@ -116,7 +116,7 @@ public sealed class GenerateWorkspaceCommandHandler
             var workspace = await _analyzer.AnalyzeWorkspaceAsync(path, cancellationToken)
                 .ConfigureAwait(false);
 
-            ResultPrinter.PrintAnalysisEngine(workspace.Projects.FirstOrDefault()?.Analysis);
+            ResultPrinter.PrintAnalysisEngines(workspace.Projects);
 
             // Attach dist facts per project (an explicit --dist applies to all).
             var enrichedProjects = new List<Core.Models.AngularProjectInfo>();
@@ -187,7 +187,7 @@ public sealed class GenerateWorkspaceCommandHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate files for workspace at {Path}", path);
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            ResultPrinter.PrintError(ex, supportsRegexFallback: true);
             return 1;
         }
     }

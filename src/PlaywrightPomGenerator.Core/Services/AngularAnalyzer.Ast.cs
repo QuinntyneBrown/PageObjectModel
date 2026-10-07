@@ -51,16 +51,8 @@ public sealed partial class AngularAnalyzer
 
     private static string FallbackReasonText(Exception ex) => ex switch
     {
-        SidecarUnavailableException sidecar => sidecar.Reason switch
-        {
-            SidecarUnavailableReason.NodeMissing =>
-                "Node.js not found — install Node.js 18+ or set POMGEN_NODE to enable AST analysis",
-            SidecarUnavailableReason.TypeScriptMissing =>
-                "typescript not resolvable from the analyzed project's node_modules — run 'npm install' to enable AST analysis",
-            SidecarUnavailableReason.SidecarMissing =>
-                "sidecar not found — set POMGEN_SIDECAR or reinstall the tool",
-            _ => sidecar.Message
-        },
+        SidecarUnavailableException sidecar =>
+            $"{SidecarRemediation.Cause(sidecar.Reason)} — {sidecar.Remediation}",
         _ => ex.Message
     };
 
@@ -109,12 +101,15 @@ public sealed partial class AngularAnalyzer
         warnings.AddRange(astProject.Warnings);
 
         var routeIndex = BuildComponentRouteIndex(astProject.Routes);
+        var compilerAvailable = analysis.Engine?.AngularCompiler is not null;
+        var lookThrough = ControlLookThrough.Create(analysis);
 
         var components = new List<AngularComponentInfo>();
         foreach (var astComponent in astProject.Components)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            components.Add(await MapAstComponentAsync(astComponent, routeIndex, packages, warnings, cancellationToken)
+            components.Add(await MapAstComponentAsync(
+                    astComponent, routeIndex, packages, warnings, compilerAvailable, lookThrough, cancellationToken)
                 .ConfigureAwait(false));
         }
 
@@ -133,15 +128,34 @@ public sealed partial class AngularAnalyzer
         return (components, routes, report);
     }
 
+    /// <summary>
+    /// Builds the per-component regex-fallback warning with a suggested fix: a template
+    /// error points at the template, a missing compiler points at npm install.
+    /// </summary>
+    internal static string TemplateFallbackWarning(AstComponent ast, bool compilerAvailable)
+    {
+        var prefix = $"{ast.ClassName}: template analyzed via regex fallback";
+        if (ast.TemplateErrors.Count > 0)
+        {
+            return $"{prefix} ({ast.TemplateErrors[0]}) — fix the template error to restore AST analysis";
+        }
+        return compilerAvailable
+            ? prefix
+            : $"{prefix} — @angular/compiler not found in node_modules; run 'npm install' in the workspace";
+    }
+
     private async Task<AngularComponentInfo> MapAstComponentAsync(
         AstComponent ast,
         Dictionary<string, AstComponentRoute> routeIndex,
         PackageReport packages,
         List<string> warnings,
+        bool compilerAvailable,
+        ControlLookThrough lookThrough,
         CancellationToken cancellationToken)
     {
         List<ElementSelector> selectors = [];
         var templateContent = ast.TemplateContent;
+        var resolvedControls = lookThrough.Resolve(ast);
 
         if (ast.TemplateParsed && ast.Template is not null)
         {
@@ -149,7 +163,7 @@ public sealed partial class AngularAnalyzer
                 .Where(d => d.Handler is not null && d.ComponentName is not null)
                 .GroupBy(d => d.Handler!, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First().ComponentName!, StringComparer.Ordinal);
-            selectors = SelectorNaming.MapSelectors(ast.Template.Elements, dialogOpensByHandler);
+            selectors = SelectorNaming.MapSelectors(ast.Template.Elements, dialogOpensByHandler, resolvedControls);
         }
         else if (ast.TemplateSource is "external" or "inline")
         {
@@ -158,8 +172,7 @@ public sealed partial class AngularAnalyzer
             {
                 selectors = ParseTemplateSelectors(fallbackTemplate);
                 templateContent ??= fallbackTemplate;
-                var detail = ast.TemplateErrors.Count > 0 ? $" ({ast.TemplateErrors[0]})" : "";
-                warnings.Add($"{ast.ClassName}: template analyzed via regex fallback{detail}");
+                warnings.Add(TemplateFallbackWarning(ast, compilerAvailable));
             }
         }
 
@@ -182,7 +195,7 @@ public sealed partial class AngularAnalyzer
             OutputsDetailed = ast.Outputs.Select(MapPort).ToList(),
             IsStandalone = ast.Standalone ?? DefaultStandalone(packages),
             ChildComponents = ast.ChildComponents.Select(MapChildComponent).ToList(),
-            Forms = ast.Template?.Forms.Select(MapForm).ToList() ?? [],
+            Forms = ast.Template?.Forms.Select(f => MapForm(f, resolvedControls)).ToList() ?? [],
             RoutePath = primaryRoute,
             RoutePaths = routePaths,
             RouteParams = ExtractRouteParams(primaryRoute),
@@ -302,17 +315,31 @@ public sealed partial class AngularAnalyzer
         Library = child.Library
     };
 
-    private static FormInfo MapForm(AstForm form) => new()
+    private static FormInfo MapForm(AstForm form, IReadOnlyDictionary<string, InnerControl> resolvedControls) => new()
     {
         FormGroupName = form.FormGroup,
         SubmitHandlerName = form.SubmitHandler,
         Controls = form.Controls.Select(c => new FormControlInfo
         {
             ControlName = c.Name,
-            ControlType = NormalizeFormControlType(
-                SelectorNaming.DeriveControlType(c.Widget, c.Tag, c.InputType, opensDialog: false))
+            ControlType = NormalizeFormControlType(DeriveFormControlType(c, resolvedControls))
         }).ToList()
     };
+
+    /// <summary>
+    /// A form control on a custom-element wrapper takes the control type of the wrapper's
+    /// inner control, so the generated form fill does not <c>fill()</c> the host element.
+    /// </summary>
+    private static ControlType DeriveFormControlType(AstFormControl control, IReadOnlyDictionary<string, InnerControl> resolvedControls)
+    {
+        var derived = SelectorNaming.DeriveControlType(control.Widget, control.Tag, control.InputType, opensDialog: false);
+        if (derived == ControlType.None && control.Widget is null && control.Tag is not null
+            && resolvedControls.TryGetValue(control.Tag.ToLowerInvariant(), out var inner))
+        {
+            return inner.ControlType;
+        }
+        return derived;
+    }
 
     private static ControlType NormalizeFormControlType(ControlType controlType) =>
         controlType == ControlType.None ? ControlType.TextInput : controlType;

@@ -158,6 +158,20 @@ public sealed record ElementSelector
     public string? OpensDialogComponent { get; init; }
 
     /// <summary>
+    /// Gets the CSS, relative to this element, that reaches the real control inside a
+    /// custom-element wrapper (e.g. <c>mat-select</c> inside <c>&lt;ds-dropdown&gt;</c>).
+    /// Null when the element is the control itself. Typed actions descend through it;
+    /// the property locator still points at the host element.
+    /// </summary>
+    public string? InnerControlSelector { get; init; }
+
+    /// <summary>
+    /// Gets the class name of the workspace component whose template supplied the
+    /// inner control, when <see cref="InnerControlSelector"/> is set.
+    /// </summary>
+    public string? ResolvedThroughComponent { get; init; }
+
+    /// <summary>
     /// Gets the table column definitions (matColumnDef) when the element is a table.
     /// </summary>
     public IReadOnlyList<TableColumnDef> ColumnDefs { get; init; } = [];

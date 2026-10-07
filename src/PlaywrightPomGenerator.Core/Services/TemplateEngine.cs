@@ -118,6 +118,15 @@ public sealed partial class TemplateEngine : ITemplateEngine
                 {
                     sb.AppendLine($"   * Rendered conditionally{(selector.ConditionText is not null ? $" ({selector.ConditionText})" : "")}.");
                 }
+                if (selector.InnerControlSelector is not null)
+                {
+                    sb.AppendLine($"   * Control resolved through {selector.ResolvedThroughComponent ?? "a child component"} ({selector.InnerControlSelector}); typed actions target the inner control.");
+                }
+                var quality = LocatorQuality.Assess(selector, component.Selectors);
+                if (quality.Grade == LocatorGrade.Weak)
+                {
+                    sb.AppendLine($"   * Weak locator ({quality.Reason}) — {quality.Fix}.");
+                }
                 sb.AppendLine("   */");
             }
             sb.AppendLine($"  readonly {ToCamelCase(selector.PropertyName)}: Locator;");
@@ -289,6 +298,15 @@ public sealed partial class TemplateEngine : ITemplateEngine
                 if (selector.IsConditional)
                 {
                     sb.AppendLine($"   * Rendered conditionally{(selector.ConditionText is not null ? $" ({selector.ConditionText})" : "")}.");
+                }
+                if (selector.InnerControlSelector is not null)
+                {
+                    sb.AppendLine($"   * Control resolved through {selector.ResolvedThroughComponent ?? "a child component"} ({selector.InnerControlSelector}); typed actions target the inner control.");
+                }
+                var quality = LocatorQuality.Assess(selector, component.Selectors);
+                if (quality.Grade == LocatorGrade.Weak)
+                {
+                    sb.AppendLine($"   * Weak locator ({quality.Reason}) — {quality.Fix}.");
                 }
                 sb.AppendLine("   */");
             }

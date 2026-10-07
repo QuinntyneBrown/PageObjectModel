@@ -15,7 +15,8 @@ public sealed class TemplateEngineControlInteractionTests
     private readonly TemplateEngine _engine = new(Options.Create(new GeneratorOptions()));
 
     private static ElementSelector Control(string name, ControlType controlType,
-        MaterialWidget widget = MaterialWidget.None, string elementType = "input") => new()
+        MaterialWidget widget = MaterialWidget.None, string elementType = "input",
+        string? inner = null, string? through = null) => new()
     {
         ElementType = elementType,
         Strategy = SelectorStrategy.TestId,
@@ -23,7 +24,9 @@ public sealed class TemplateEngineControlInteractionTests
         TestIdValue = name,
         PropertyName = SelectorNaming.ToPascalCase(name),
         ControlType = controlType,
-        MaterialWidget = widget
+        MaterialWidget = widget,
+        InnerControlSelector = inner,
+        ResolvedThroughComponent = through
     };
 
     private static AngularComponentInfo Component(params ElementSelector[] selectors) => new()
@@ -162,5 +165,93 @@ public sealed class TemplateEngineControlInteractionTests
         var result = _engine.GeneratePageObject(Component(Control("country", ControlType.Select, MaterialWidget.MatSelect, "mat-select")));
 
         result.Should().Contain("async expectCountryVisible(): Promise<void>");
+    }
+
+    // --- custom-element look-through: actions descend, host stays the property ------------
+
+    [Fact]
+    public void GeneratePageObject_ResolvedMatSelectWrapper_ShouldDescendForActionsOnly()
+    {
+        var result = _engine.GeneratePageObject(Component(
+            Control("country", ControlType.Select, MaterialWidget.MatSelect, "ds-dropdown", inner: "mat-select", through: "DsDropdownComponent")));
+
+        result.Should().Contain("await this.selectMatOption(this.country.locator('mat-select'), optionText);");
+        result.Should().Contain("await expect(this.country).toContainText(optionText);", "assertions stay on the host");
+        result.Should().Contain("await expect(this.country).toBeVisible();");
+        result.Should().Contain("this.country = page.getByTestId('country');", "the property is the host element");
+        result.Should().Contain("Control resolved through DsDropdownComponent (mat-select)");
+    }
+
+    [Fact]
+    public void GeneratePageObject_ResolvedCheckboxWrapper_ShouldDescendIntoSetChecked()
+    {
+        var result = _engine.GeneratePageObject(Component(
+            Control("terms", ControlType.Checkbox, MaterialWidget.MatCheckbox, "ds-check", inner: "mat-checkbox")));
+
+        result.Should().Contain("await this.setChecked(this.terms.locator('mat-checkbox'), true);");
+        result.Should().Contain("await this.expectCheckedState(this.terms.locator('mat-checkbox'), checked);");
+    }
+
+    [Fact]
+    public void GeneratePageObject_ResolvedDatepickerWrapper_ShouldFillTheInnerInput()
+    {
+        var result = _engine.GeneratePageObject(Component(
+            Control("dueDate", ControlType.Datepicker, MaterialWidget.MatDatepicker, "ds-date", inner: "input[type='text']")));
+
+        result.Should().Contain("await this.dueDate.locator('input[type=\\'text\\']').fill(date);");
+        result.Should().Contain("await this.dueDate.locator('input[type=\\'text\\']').blur();");
+    }
+
+    [Fact]
+    public void GeneratePageObject_ResolvedTextWrapper_ShouldFillTheInnerInput()
+    {
+        var result = _engine.GeneratePageObject(Component(
+            Control("email", ControlType.TextInput, elementType: "ds-input", inner: "input")));
+
+        result.Should().Contain("await this.email.locator('input').fill(value);");
+    }
+
+    [Fact]
+    public void GeneratePageObject_WithoutInnerControl_ShouldNotDescend()
+    {
+        var result = _engine.GeneratePageObject(Component(Control("country", ControlType.Select, MaterialWidget.MatSelect, "mat-select")));
+
+        result.Should().NotContain(".locator('mat-select')");
+        result.Should().NotContain("Control resolved through");
+    }
+
+    [Fact]
+    public void GeneratePageObject_FormWithResolvedWrapper_ShouldDescendInTheFormFill()
+    {
+        var country = Control("country", ControlType.Select, MaterialWidget.MatSelect, "ds-dropdown", inner: "mat-select") with
+        {
+            FormControlName = "country"
+        };
+        var component = Component(country) with
+        {
+            Forms =
+            [
+                new FormInfo
+                {
+                    FormGroupName = "checkoutForm",
+                    Controls = [new FormControlInfo { ControlName = "country", ControlType = ControlType.Select }]
+                }
+            ]
+        };
+
+        var result = _engine.GeneratePageObject(component);
+
+        result.Should().Contain("await this.selectMatOption(this.country.locator('mat-select'), data.country);");
+    }
+
+    [Fact]
+    public void GenerateComponentObject_ResolvedWrapper_ShouldDescendFromThisRoot()
+    {
+        var result = _engine.GenerateComponentObject(Component(
+            Control("country", ControlType.Select, MaterialWidget.MatSelect, "ds-dropdown", inner: "mat-select")));
+
+        result.Should().Contain("this.country = this.root.getByTestId('country');");
+        result.Should().Contain("await this.selectMatOption(this.country.locator('mat-select'), optionText);");
+        result.Should().NotContain("this.page");
     }
 }

@@ -82,15 +82,17 @@ public sealed class AstProjectAnalyzer : IAstProjectAnalyzer
                 "The sidecar and the tool are out of sync — reinstall the tool.");
         }
 
+        // Warnings reach the user through AnalysisReport.Warnings (printed by the
+        // generator's Warnings block); log at debug level only to avoid duplicates.
         foreach (var warning in analysis.Warnings)
         {
-            _logger.LogWarning("Sidecar: {Warning}", warning);
+            _logger.LogDebug("Sidecar: {Warning}", warning);
         }
         foreach (var project in analysis.Projects)
         {
             foreach (var warning in project.Warnings)
             {
-                _logger.LogWarning("Sidecar [{Project}]: {Warning}", project.Name, warning);
+                _logger.LogDebug("Sidecar [{Project}]: {Warning}", project.Name, warning);
             }
         }
 

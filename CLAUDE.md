@@ -70,8 +70,15 @@ Two projects, clean dependency direction `Cli -> Core` (Core has no dependency o
     whose template the sidecar could not parse falls back to regex *for that component only*.
     AST results are mapped to models via `SelectorNaming` (internal static — locator strategy
     priority, property naming, collision resolution; the sidecar returns raw facts only).
-    Per-project results carry an `AnalysisReport` (engine used, versions, fallback reason)
-    printed by handlers via `Commands/ResultPrinter`.
+    `ControlLookThrough` (internal) resolves custom-element wrappers that are workspace
+    components to the single value control inside their own template (recursive, max depth 3,
+    conservative); the host `ElementSelector` gets the inner `ControlType` plus
+    `InnerControlSelector`, and `TemplateEngine.V2`'s `ActionTarget` descends through it for
+    typed actions while the property stays the host locator. Per-project results carry an
+    `AnalysisReport` (engine used, versions, fallback reason, warnings). `CodeGenerator` copies
+    the report's warnings into `GenerationResult.Warnings` and appends `LocatorQuality` weak-
+    locator summaries; handlers print the engine banner and `Error:`/`Fix:` pairs via
+    `Commands/ResultPrinter`, with the fix text coming from `SidecarRemediation`.
   - `IAstProjectAnalyzer` / `AstProjectAnalyzer` — invokes the sidecar's `analyzeProject` and
     deserializes the schemaVersion-1 JSON into the wire DTOs in `Models/AstProjectModels.cs`.
   - `ITypeScriptAnalyzer` / `TypeScriptAnalyzer` — the `bridge` command's seam

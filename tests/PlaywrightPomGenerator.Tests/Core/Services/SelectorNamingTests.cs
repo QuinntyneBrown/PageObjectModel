@@ -223,6 +223,81 @@ public sealed class SelectorNamingTests
         selector.PropertyName.Should().Be("SettingsLink");
     }
 
+    // --- custom-element look-through -----------------------------------------------------
+
+    private static readonly IReadOnlyDictionary<string, InnerControl> DropdownLookThrough =
+        new Dictionary<string, InnerControl>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ds-dropdown"] = new InnerControl(ControlType.Select, MaterialWidget.MatSelect, "mat-select", "DsDropdownComponent")
+        };
+
+    [Fact]
+    public void MapSelectors_ResolvedCustomTag_ShouldTakeTheInnerControlType()
+    {
+        var selectors = SelectorNaming.MapSelectors(
+            [Element("ds-dropdown", formControlName: "country")], NoDialogs, DropdownLookThrough);
+
+        var selector = selectors.Should().ContainSingle().Subject;
+        selector.ControlType.Should().Be(ControlType.Select);
+        selector.MaterialWidget.Should().Be(MaterialWidget.MatSelect);
+        selector.InnerControlSelector.Should().Be("mat-select");
+        selector.ResolvedThroughComponent.Should().Be("DsDropdownComponent");
+        selector.PropertyName.Should().Be("CountrySelect", "named like a bare <mat-select> would be");
+        selector.Strategy.Should().Be(SelectorStrategy.FormControl, "the property still points at the host element");
+        selector.IsMaterialComponent.Should().BeFalse("the host is not a Material element");
+    }
+
+    [Fact]
+    public void MapSelectors_ResolvedCustomTagInsideMatFormField_ShouldKeepFormControlStrategy()
+    {
+        var element = Element("ds-dropdown", formControlName: "country") with
+        {
+            Labels = new AstLabels { MatLabel = "Country" }
+        };
+
+        var selector = SelectorNaming.MapSelectors([element], NoDialogs, DropdownLookThrough).Should().ContainSingle().Subject;
+
+        // getByLabel would resolve to the inner mat-select and break the descent; stay on the host.
+        selector.Strategy.Should().Be(SelectorStrategy.FormControl);
+        selector.PropertyName.Should().Be("CountrySelect");
+    }
+
+    [Fact]
+    public void MapSelectors_ResolvedCustomTagWithOnlyNgModel_ShouldBeKept()
+    {
+        var element = new AstElement
+        {
+            Tag = "ds-dropdown",
+            Form = new AstFormFacts { NgModel = "selectedCountry" }
+        };
+
+        var selector = SelectorNaming.MapSelectors([element], NoDialogs, DropdownLookThrough).Should().ContainSingle().Subject;
+
+        selector.PropertyName.Should().Be("SelectedCountrySelect");
+        selector.ControlType.Should().Be(ControlType.Select);
+    }
+
+    [Fact]
+    public void MapSelectors_UnresolvedCustomTag_ShouldBeUnchanged()
+    {
+        var selectors = SelectorNaming.MapSelectors(
+            [Element("ds-dropdown", formControlName: "country")], NoDialogs);
+
+        var selector = selectors.Should().ContainSingle().Subject;
+        selector.ControlType.Should().Be(ControlType.None);
+        selector.InnerControlSelector.Should().BeNull();
+        selector.PropertyName.Should().Be("Country");
+    }
+
+    [Fact]
+    public void MapSelectors_CustomTagWithOwnWidget_ShouldNotBeOverriddenByLookThrough()
+    {
+        var selectors = SelectorNaming.MapSelectors(
+            [Element("ds-dropdown", widget: "matMenuTrigger", text: "More")], NoDialogs, DropdownLookThrough);
+
+        selectors.Should().ContainSingle().Which.ControlType.Should().Be(ControlType.MenuTrigger);
+    }
+
     [Fact]
     public void MapSelectors_HeadingWithInterpolation_ShouldRemainTextElement()
     {

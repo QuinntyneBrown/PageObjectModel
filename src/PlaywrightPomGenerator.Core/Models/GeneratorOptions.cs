@@ -83,4 +83,11 @@ public sealed class GeneratorOptions
     /// Gets or sets the sidecar invocation timeout in seconds (0 disables the timeout).
     /// </summary>
     public int SidecarTimeoutSeconds { get; set; } = 600;
+
+    /// <summary>
+    /// Gets or sets whether generation warns about weak locators (CSS fallbacks,
+    /// interpolated-text matches, generic numbered names, unresolved duplicates)
+    /// with a suggested fix per component.
+    /// </summary>
+    public bool LocatorQualityWarnings { get; set; } = true;
 }

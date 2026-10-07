@@ -234,7 +234,7 @@ public sealed class GenerateArtifactsCommandHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate artifacts for {Path}", path);
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            ResultPrinter.PrintError(ex, supportsRegexFallback: true);
             return 1;
         }
     }

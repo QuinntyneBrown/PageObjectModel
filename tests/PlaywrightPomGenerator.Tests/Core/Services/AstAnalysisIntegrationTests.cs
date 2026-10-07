@@ -298,6 +298,68 @@ public sealed class AstAnalysisIntegrationTests
     }
 
     [Fact]
+    public async Task AnalyzeApplication_CustomWrapperControl_ShouldResolveThroughTheChildTemplate()
+    {
+        if (!SidecarWithCompilerAvailable)
+        {
+            return;
+        }
+
+        var root = CreateFixtureDir();
+        try
+        {
+            Write(root, "package.json", """
+                { "dependencies": { "@angular/core": "^17.0.0", "@angular/material": "^17.0.0" } }
+                """);
+            Write(root, "src/app/ds-dropdown.component.ts", """
+                import { Component } from '@angular/core';
+                @Component({
+                  selector: 'ds-dropdown',
+                  template: `
+                    <mat-form-field>
+                      <mat-label>{{ label }}</mat-label>
+                      <mat-select>
+                        <mat-option *ngFor="let o of options" [value]="o">{{ o }}</mat-option>
+                      </mat-select>
+                    </mat-form-field>
+                  `,
+                })
+                export class DsDropdownComponent {}
+                """);
+            Write(root, "src/app/checkout.component.ts", """
+                import { Component } from '@angular/core';
+                @Component({
+                  selector: 'app-checkout',
+                  template: `
+                    <form [formGroup]="form" (ngSubmit)="submit()">
+                      <ds-dropdown formControlName="country" label="Country"></ds-dropdown>
+                      <button type="submit" data-testid="place-order">Place order</button>
+                    </form>
+                  `,
+                })
+                export class CheckoutComponent {}
+                """);
+
+            var project = await CreateRealAnalyzer().AnalyzeApplicationAsync(root);
+
+            var checkout = project.Components.Single(c => c.Name == "CheckoutComponent");
+            var country = checkout.Selectors.Single(s => s.FormControlName == "country");
+            country.ElementType.Should().Be("ds-dropdown");
+            country.ControlType.Should().Be(ControlType.Select);
+            country.MaterialWidget.Should().Be(MaterialWidget.MatSelect);
+            country.InnerControlSelector.Should().Be("mat-select");
+            country.ResolvedThroughComponent.Should().Be("DsDropdownComponent");
+
+            var form = checkout.Forms.Should().ContainSingle().Subject;
+            form.Controls.Single(c => c.ControlName == "country").ControlType.Should().Be(ControlType.Select);
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    [Fact]
     public async Task AnalyzeApplication_WithUnusableNodeExecutable_ShouldFallBackToRegex()
     {
         // No skip guard: this scenario must hold in every environment.

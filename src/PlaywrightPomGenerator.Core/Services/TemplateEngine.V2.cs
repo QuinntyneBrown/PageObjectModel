@@ -154,24 +154,37 @@ public sealed partial class TemplateEngine
         }
     }
 
+    /// <summary>
+    /// The locator typed actions act on: the property itself, or — for a custom-element
+    /// wrapper resolved by <see cref="ControlLookThrough"/> — the real control inside it.
+    /// Visibility assertions and the property stay on the host element.
+    /// </summary>
+    private static string ActionTarget(ElementSelector selector)
+    {
+        var prop = $"this.{ToCamelCase(selector.PropertyName)}";
+        return selector.InnerControlSelector is null
+            ? prop
+            : $"{prop}.locator('{EscapeForJsString(selector.InnerControlSelector)}')";
+    }
+
     private void AppendCheckboxMethods(StringBuilder sb, ElementSelector selector, string onName, string offName, string stateWord)
     {
-        var prop = ToCamelCase(selector.PropertyName);
+        var target = ActionTarget(selector);
         Doc(sb, $"Turns the {selector.PropertyName} control on.");
         sb.AppendLine($"  async {onName}{selector.PropertyName}(): Promise<void> {{");
-        sb.AppendLine($"    await this.setChecked(this.{prop}, true);");
+        sb.AppendLine($"    await this.setChecked({target}, true);");
         sb.AppendLine("  }");
         sb.AppendLine();
 
         Doc(sb, $"Turns the {selector.PropertyName} control off.");
         sb.AppendLine($"  async {offName}{selector.PropertyName}(): Promise<void> {{");
-        sb.AppendLine($"    await this.setChecked(this.{prop}, false);");
+        sb.AppendLine($"    await this.setChecked({target}, false);");
         sb.AppendLine("  }");
         sb.AppendLine();
 
         Doc(sb, $"Asserts the checked state of {selector.PropertyName}.");
         sb.AppendLine($"  async expect{selector.PropertyName}{stateWord}(checked: boolean = true): Promise<void> {{");
-        sb.AppendLine($"    await this.expectCheckedState(this.{prop}, checked);");
+        sb.AppendLine($"    await this.expectCheckedState({target}, checked);");
         sb.AppendLine("  }");
         sb.AppendLine();
     }
@@ -179,11 +192,12 @@ public sealed partial class TemplateEngine
     private void AppendSelectMethods(StringBuilder sb, ElementSelector selector)
     {
         var prop = ToCamelCase(selector.PropertyName);
+        var target = ActionTarget(selector);
         if (selector.MaterialWidget == MaterialWidget.MatSelect)
         {
             Doc(sb, $"Selects an option of {selector.PropertyName} by its visible text (CDK overlay aware).");
             sb.AppendLine($"  async select{selector.PropertyName}(optionText: string): Promise<void> {{");
-            sb.AppendLine($"    await this.selectMatOption(this.{prop}, optionText);");
+            sb.AppendLine($"    await this.selectMatOption({target}, optionText);");
             sb.AppendLine("  }");
             sb.AppendLine();
 
@@ -197,7 +211,7 @@ public sealed partial class TemplateEngine
         {
             Doc(sb, $"Selects an option of {selector.PropertyName} by its label.");
             sb.AppendLine($"  async select{selector.PropertyName}(optionLabel: string): Promise<void> {{");
-            sb.AppendLine($"    await this.{prop}.selectOption({{ label: optionLabel }});");
+            sb.AppendLine($"    await {target}.selectOption({{ label: optionLabel }});");
             sb.AppendLine("  }");
             sb.AppendLine();
         }
@@ -205,31 +219,31 @@ public sealed partial class TemplateEngine
 
     private void AppendRadioMethods(StringBuilder sb, ElementSelector selector)
     {
-        var prop = ToCamelCase(selector.PropertyName);
+        var target = ActionTarget(selector);
         Doc(sb, $"Checks the radio option of {selector.PropertyName} with the given label.");
         sb.AppendLine($"  async select{selector.PropertyName}Option(label: string): Promise<void> {{");
-        sb.AppendLine($"    await this.{prop}.getByRole('radio', {{ name: label }}).check();");
+        sb.AppendLine($"    await {target}.getByRole('radio', {{ name: label }}).check();");
         sb.AppendLine("  }");
         sb.AppendLine();
     }
 
     private void AppendDatepickerMethods(StringBuilder sb, ElementSelector selector)
     {
-        var prop = ToCamelCase(selector.PropertyName);
+        var target = ActionTarget(selector);
         Doc(sb, $"Types a date into {selector.PropertyName} (in the app's display format) without opening the calendar.");
         sb.AppendLine($"  async fill{selector.PropertyName}Date(date: string): Promise<void> {{");
-        sb.AppendLine($"    await this.{prop}.fill(date);");
-        sb.AppendLine($"    await this.{prop}.blur();");
+        sb.AppendLine($"    await {target}.fill(date);");
+        sb.AppendLine($"    await {target}.blur();");
         sb.AppendLine("  }");
         sb.AppendLine();
     }
 
     private void AppendAutocompleteMethods(StringBuilder sb, ElementSelector selector)
     {
-        var prop = ToCamelCase(selector.PropertyName);
+        var target = ActionTarget(selector);
         Doc(sb, $"Types into {selector.PropertyName} and picks the matching autocomplete option.");
         sb.AppendLine($"  async fill{selector.PropertyName}AndPick(text: string, optionText?: string): Promise<void> {{");
-        sb.AppendLine($"    await this.pickAutocompleteOption(this.{prop}, text, optionText);");
+        sb.AppendLine($"    await this.pickAutocompleteOption({target}, text, optionText);");
         sb.AppendLine("  }");
         sb.AppendLine();
     }
@@ -299,10 +313,10 @@ public sealed partial class TemplateEngine
 
     private void AppendTypedFillMethods(StringBuilder sb, ElementSelector selector)
     {
-        var prop = ToCamelCase(selector.PropertyName);
+        var target = ActionTarget(selector);
         Doc(sb, $"Fills the {selector.PropertyName} input with the specified value.");
         sb.AppendLine($"  async fill{selector.PropertyName}(value: string): Promise<void> {{");
-        sb.AppendLine($"    await this.{prop}.fill(value);");
+        sb.AppendLine($"    await {target}.fill(value);");
         sb.AppendLine("  }");
         sb.AppendLine();
     }
@@ -523,7 +537,7 @@ public sealed partial class TemplateEngine
             string.Equals(s.FormControlName, control.ControlName, StringComparison.Ordinal));
         // Inline fallback keeps the method compiling when the control has no generated property.
         var target = selector is not null
-            ? $"this.{ToCamelCase(selector.PropertyName)}"
+            ? ActionTarget(selector)
             : $"{rootExpression}.locator('[formControlName=\"{control.ControlName}\"]')";
 
         return control.ControlType switch

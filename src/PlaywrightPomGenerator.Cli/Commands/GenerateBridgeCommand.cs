@@ -126,7 +126,7 @@ public sealed class GenerateBridgeCommandHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate bridge for {Path}", path);
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            ResultPrinter.PrintError(ex, supportsRegexFallback: false);
             return 1;
         }
     }

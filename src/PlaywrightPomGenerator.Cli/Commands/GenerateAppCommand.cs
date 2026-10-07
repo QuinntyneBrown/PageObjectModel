@@ -155,7 +155,7 @@ public sealed class GenerateAppCommandHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate files for application at {Path}", path);
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            ResultPrinter.PrintError(ex, supportsRegexFallback: true);
             return 1;
         }
     }

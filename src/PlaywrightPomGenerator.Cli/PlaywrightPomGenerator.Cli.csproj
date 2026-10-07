@@ -14,7 +14,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>PlaywrightPomGenerator</PackageId>
-    <Version>2.0.0</Version>
+    <Version>2.1.0</Version>
     <Authors>PlaywrightPomGenerator Contributors</Authors>
     <Description>A CLI tool that generates Playwright Page Object Model (POM) tests for Angular applications. Analyzes components, templates, and routes via the TypeScript/Angular compiler AST (with a regex fallback) and creates type-safe page objects with component composition, typed form helpers, Material widget interactions, selectors, fixtures, and test specs.</Description>
     <PackageTags>playwright;angular;testing;e2e;page-object-model;pom;test-automation;code-generation</PackageTags>

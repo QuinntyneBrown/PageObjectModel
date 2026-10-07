@@ -17,12 +17,13 @@ internal static partial class SelectorNaming
     /// </summary>
     public static List<ElementSelector> MapSelectors(
         IReadOnlyList<AstElement> elements,
-        IReadOnlyDictionary<string, string> dialogOpensByHandler)
+        IReadOnlyDictionary<string, string> dialogOpensByHandler,
+        IReadOnlyDictionary<string, InnerControl>? lookThrough = null)
     {
         var candidates = new List<Candidate>();
         foreach (var element in elements)
         {
-            var candidate = BuildCandidate(element, dialogOpensByHandler);
+            var candidate = BuildCandidate(element, dialogOpensByHandler, lookThrough);
             if (candidate is not null)
             {
                 candidates.Add(candidate);
@@ -159,7 +160,10 @@ internal static partial class SelectorNaming
         "input", "select", "textarea"
     };
 
-    private static Candidate? BuildCandidate(AstElement element, IReadOnlyDictionary<string, string> dialogOpensByHandler)
+    private static Candidate? BuildCandidate(
+        AstElement element,
+        IReadOnlyDictionary<string, string> dialogOpensByHandler,
+        IReadOnlyDictionary<string, InnerControl>? lookThrough)
     {
         var tag = element.Tag.ToLowerInvariant();
         if (SkippedTags.Contains(tag))
@@ -177,6 +181,18 @@ internal static partial class SelectorNaming
         var widget = ParseWidget(element.Widget);
         var inputType = element.Form.InputType;
         var controlType = DeriveControlType(element.Widget, tag, inputType, opensDialog is not null);
+
+        // Custom-element wrappers (workspace components) take the control type of the
+        // single value control inside their own template; typed actions descend into it.
+        InnerControl? resolved = null;
+        if (controlType == ControlType.None && element.Widget is null
+            && lookThrough is not null && lookThrough.TryGetValue(tag, out var inner))
+        {
+            resolved = inner;
+            controlType = inner.ControlType;
+        }
+        var effectiveWidget = resolved?.Widget ?? widget;
+
         var labelText = element.Labels.LabelFor
             ?? element.Labels.WrappingLabel
             ?? element.Labels.MatLabel
@@ -192,7 +208,7 @@ internal static partial class SelectorNaming
             || staticText is not null || hasClick || element.IsRouterLink
             || element.Text.Interpolated || element.HasNgContent;
         var isWidgetOrTable = widget != MaterialWidget.None || element.Table?.IsTable == true;
-        if (!hasNameSource && !isWidgetOrTable && !AlwaysKeptTags.Contains(tag))
+        if (!hasNameSource && !isWidgetOrTable && !AlwaysKeptTags.Contains(tag) && resolved is null)
         {
             return null;
         }
@@ -206,6 +222,7 @@ internal static partial class SelectorNaming
             ?? staticText
             ?? element.Aria.Label
             ?? formControlName
+            ?? (resolved is not null ? element.Form.NgModel : null)
             ?? element.Labels.Placeholder
             ?? element.Id
             ?? HandlerBaseName(clickHandler)
@@ -219,7 +236,7 @@ internal static partial class SelectorNaming
         }
         else
         {
-            var suffix = SuffixFor(tag, controlType, widget, element);
+            var suffix = SuffixFor(tag, controlType, effectiveWidget, element);
             name = ApplySuffix(ToPascalCase(baseName), suffix);
         }
 
@@ -253,7 +270,9 @@ internal static partial class SelectorNaming
             IsRepeated = element.Structure.Repeated,
             RepeatItemAlias = element.Structure.RepeatAlias,
             ControlType = controlType,
-            MaterialWidget = widget,
+            MaterialWidget = effectiveWidget,
+            InnerControlSelector = resolved?.InnerCss,
+            ResolvedThroughComponent = resolved?.ComponentClassName,
             NearestHeadingText = element.Ancestry.HeadingText,
             FormControlName = formControlName,
             FormGroupName = element.Form.FormGroup ?? element.Form.FormGroupName,

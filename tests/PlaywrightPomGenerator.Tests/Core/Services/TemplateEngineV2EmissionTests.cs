@@ -471,6 +471,8 @@ public sealed class TemplateEngineV2EmissionTests
         result.Should().NotContain("At(index: number)");
         result.Should().NotContain("expectLoginButtonHidden");
         result.Should().NotContain(".mat-column-");
+        result.Should().NotContain(".locator('mat-select')", "no look-through data means no descent");
+        result.Should().NotContain("Control resolved through");
         result.Should().Contain("async navigate(): Promise<void>", "no route params means the v1 signature");
         result.Should().Contain("async fillUsernameInput(value: string): Promise<void>", "v1 fill emission is unchanged");
         result.Should().Contain("this.loginButton = page.getByRole('button', { name: 'Login' });");

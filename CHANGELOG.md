@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-10-07
+
+### Added
+- **Custom control look-through.** A custom element that is a workspace component
+  (e.g. `<ds-dropdown formControlName="country">`) now resolves to the single value control
+  inside its own template, so the host gets a typed interaction (`selectCountrySelect`,
+  `fillEmail`, `checkTerms`, …) and reactive-form fills use the right action instead of calling
+  `fill()` on the host element. The property stays the host locator; actions descend via the
+  new `ElementSelector.InnerControlSelector`. Conservative: exactly one control, not repeated or
+  projected, up to three nested wrappers. AST engine only.
+- **Suggested fixes for analysis failures.** Every `SidecarUnavailableReason` carries a
+  remediation (`SidecarRemediation`), printed in the regex-fallback banner and, for
+  `--engine ast` / `bridge`, as `Fix:` (plus a `--engine auto` hint) after `Error:`. Sidecar
+  timeouts are now reported as `Timeout` with their own fix. Per-component template fallbacks
+  say whether to fix the template or run `npm install`.
+- **Locator-quality warnings.** Generation warns per component about weak locators (bare CSS
+  fallbacks, typed-input CSS, `:has-text` on interpolated text, generic numbered names,
+  unresolved duplicates) with a concrete fix, and documents the same on the property's JSDoc.
+  `--debug` lists every weak locator with its template line. Opt out with
+  `Generator:LocatorQualityWarnings=false`.
+- README "Troubleshooting" section and `POMGEN_SIDECAR` / `SidecarTimeoutSeconds` docs.
+
+### Fixed
+- Analysis warnings (sidecar notes, per-component regex fallbacks) were recorded on the
+  `AnalysisReport` but never shown; they now appear in the CLI's `Warnings:` block.
+- `workspace` and `remote` printed the engine banner for the first project only; now one per
+  project.
+
 ## [PlaywrightPomGenerator.Core 2.0.0] - 2026-07-31
 
 ### Added

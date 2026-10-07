@@ -161,9 +161,10 @@ public sealed class NodeSidecarTransport : ISidecarTransport
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
+            var detail = stderr.ToString().Trim();
             throw new SidecarUnavailableException(
-                SidecarUnavailableReason.ProtocolError,
-                $"The Node sidecar timed out after {_timeout?.TotalSeconds:F0}s (method '{method}').");
+                SidecarUnavailableReason.Timeout,
+                $"The Node sidecar timed out after {_timeout?.TotalSeconds:F0}s (method '{method}'). {detail}".Trim());
         }
         finally
         {
